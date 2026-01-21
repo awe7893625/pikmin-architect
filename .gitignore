@@ -74,5 +74,4 @@ website/完成部署*.md
 website/立即部署*.md
 website/部署步驟.md
 website/金流串接說明.md
-*.dmg
-website/**/*.dmg
+# website/downloads/*.dmg  # 允許 DMG 被提交
