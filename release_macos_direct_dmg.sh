@@ -181,9 +181,17 @@ echo "💿 產出 DMG（覆蓋網站下載檔）..."
 TMP_DMG_DIR="$(mktemp -d)"
 cp -R "$APP_PATH" "$TMP_DMG_DIR/${APP_NAME}.app"
 ln -s /Applications "$TMP_DMG_DIR/Applications"
+# 清除臨時目錄中 App 的 quarantine
+sudo xattr -cr "$TMP_DMG_DIR/${APP_NAME}.app" 2>/dev/null || xattr -cr "$TMP_DMG_DIR/${APP_NAME}.app" 2>/dev/null || true
 rm -f "$DMG_PATH"
 hdiutil create -volname "$APP_NAME" -srcfolder "$TMP_DMG_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
 rm -rf "$TMP_DMG_DIR"
+
+echo "🔐 簽名 DMG 本身（防止下載後被標記為已損毀）..."
+codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH" 2>&1 | head -3 || echo "⚠️  DMG 簽名失敗（繼續）"
+# 清除 DMG 本身的 quarantine
+xattr -cr "$DMG_PATH" 2>/dev/null || true
+xattr -d com.apple.quarantine "$DMG_PATH" 2>/dev/null || true
 
 echo "✅ 完成：$DMG_PATH"
 echo "下一步：把 DMG 推送到 GitHub 讓網站更新下載（或我可以幫你一鍵 commit/push）。"
