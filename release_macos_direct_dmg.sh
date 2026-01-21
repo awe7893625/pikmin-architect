@@ -21,13 +21,20 @@ APP_NAME="KongGoo"
 
 PROFILE_NAME="${PROFILE_NAME:-konggoo-notary}"
 
+# ✅ 若沒有 keychain profile，也可用 API Key 直接公證（推薦）
+# 用法：
+#   NOTARY_ISSUER_ID=... NOTARY_KEY_ID=... NOTARY_KEY_PATH=/path/AuthKey_XXXX.p8 ./release_macos_direct_dmg.sh
+NOTARY_ISSUER_ID="${NOTARY_ISSUER_ID:-}"
+NOTARY_KEY_ID="${NOTARY_KEY_ID:-}"
+NOTARY_KEY_PATH="${NOTARY_KEY_PATH:-}"
+
 BUILD_DIR="$ROOT_DIR/build_direct"
 ARCHIVE_PATH="$BUILD_DIR/${APP_NAME}.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
 APP_PATH="$EXPORT_DIR/${APP_NAME}.app"
 ZIP_PATH="$BUILD_DIR/${APP_NAME}.zip"
 
-DMG_OUT_DIR="$ROOT_DIR/website/downloads"
+DMG_OUT_DIR="$ROOT_DIR/website/public/downloads"
 DMG_PATH="$DMG_OUT_DIR/ios-location-simulator-mac.dmg"
 
 echo "🔎 檢查 Developer ID Application 憑證..."
@@ -42,11 +49,20 @@ if [[ -z "${SIGN_IDENTITY:-}" ]]; then
   exit 1
 fi
 
-echo "🔎 檢查 notarytool profile：$PROFILE_NAME"
-if ! xcrun notarytool history --keychain-profile "$PROFILE_NAME" >/dev/null 2>&1; then
-  echo "❌ 找不到 notarytool profile：$PROFILE_NAME"
-  echo "先執行：./setup_notarytool_api_key.sh <ISSUER_ID> <KEY_ID> /path/to/AuthKey_XXXX.p8"
-  exit 1
+NOTARY_ARGS=()
+if [[ -n "$NOTARY_KEY_PATH" && -n "$NOTARY_KEY_ID" && -n "$NOTARY_ISSUER_ID" ]]; then
+  echo "🔎 使用 notarytool API Key（無需 keychain profile）"
+  NOTARY_ARGS=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+else
+  echo "🔎 檢查 notarytool keychain profile：$PROFILE_NAME"
+  if ! xcrun notarytool history --keychain-profile "$PROFILE_NAME" >/dev/null 2>&1; then
+    echo "❌ 找不到 notarytool profile：$PROFILE_NAME"
+    echo "請擇一："
+    echo "  A) 設定 keychain profile：./setup_notarytool_api_key.sh <ISSUER_ID> <KEY_ID> /path/to/AuthKey_XXXX.p8"
+    echo "  B) 或改用 API Key：NOTARY_ISSUER_ID=... NOTARY_KEY_ID=... NOTARY_KEY_PATH=... ./release_macos_direct_dmg.sh"
+    exit 1
+  fi
+  NOTARY_ARGS=(--keychain-profile "$PROFILE_NAME")
 fi
 
 rm -rf "$BUILD_DIR"
@@ -94,6 +110,22 @@ fi
 echo "📦 內嵌 Python / pymobiledevice3 / libimobiledevice..."
 bash "$ROOT_DIR/scripts/bundle_python_deps.sh" "$APP_PATH"
 
+echo "🧹 打包瘦身（先清理再簽名，避免簽名失效）..."
+# 清除 Python 快取與無用工具套件（不影響實際功能）
+PY_SITE="$APP_PATH/Contents/Resources/python/lib/python3.14/site-packages"
+if [[ -d "$APP_PATH/Contents/Resources/python" ]]; then
+  find "$APP_PATH/Contents/Resources/python" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
+  find "$APP_PATH/Contents/Resources/python" -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete 2>/dev/null || true
+  rm -rf "$PY_SITE/pip" "$PY_SITE/pip-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/setuptools" "$PY_SITE/setuptools-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/IPython" "$PY_SITE/ipython-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/ipython_pygments_lexers"* 2>/dev/null || true
+  rm -rf "$PY_SITE/xonsh" "$PY_SITE/xonsh-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/jedi" "$PY_SITE/jedi-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/pygments" "$PY_SITE/pygments-"*.dist-info 2>/dev/null || true
+  rm -rf "$PY_SITE/matplotlib_inline" "$PY_SITE/matplotlib_inline-"*.dist-info 2>/dev/null || true
+fi
+
 echo "🔏 重新簽署（包含內嵌依賴）..."
 if [[ -d "$APP_PATH/Contents/Resources/lib" ]]; then
   find "$APP_PATH/Contents/Resources/lib" -type f -name "*.dylib" -print0 | \
@@ -123,7 +155,7 @@ rm -f "$ZIP_PATH"
 /usr/bin/ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
 echo "🧾 Notarize（提交中）..."
-SUBMIT_OUTPUT=$(xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$PROFILE_NAME" 2>&1)
+SUBMIT_OUTPUT=$(xcrun notarytool submit "$ZIP_PATH" "${NOTARY_ARGS[@]}" 2>&1)
 SUBMIT_ID=$(echo "$SUBMIT_OUTPUT" | grep -i "id:" | head -1 | awk -F': ' '{print $2}' | xargs)
 
 if [ -z "$SUBMIT_ID" ]; then
@@ -140,7 +172,7 @@ MAX_WAIT=1800
 ELAPSED=0
 while [ $ELAPSED -lt $MAX_WAIT ]; do
   # 使用 info 而不是 log（log 只在完成時才有內容）
-  STATUS_OUTPUT=$(xcrun notarytool info "$SUBMIT_ID" --keychain-profile "$PROFILE_NAME" --output-format json 2>&1)
+  STATUS_OUTPUT=$(xcrun notarytool info "$SUBMIT_ID" "${NOTARY_ARGS[@]}" --output-format json 2>&1)
   STATUS=$(echo "$STATUS_OUTPUT" | python3 -c "import sys, json; d=json.load(sys.stdin); print(d.get('status', 'Unknown'))" 2>/dev/null || echo "Unknown")
   
   if [ "$STATUS" = "Accepted" ]; then
@@ -151,7 +183,7 @@ while [ $ELAPSED -lt $MAX_WAIT ]; do
     echo ""
     echo "❌ Notarization 失敗：$STATUS"
     echo "檢查詳細日誌："
-    xcrun notarytool log "$SUBMIT_ID" --keychain-profile "$PROFILE_NAME" 2>&1
+    xcrun notarytool log "$SUBMIT_ID" "${NOTARY_ARGS[@]}" 2>&1
     exit 1
   fi
   # 每 30 秒顯示進度
@@ -184,7 +216,7 @@ ln -s /Applications "$TMP_DMG_DIR/Applications"
 # 清除臨時目錄中 App 的 quarantine
 sudo xattr -cr "$TMP_DMG_DIR/${APP_NAME}.app" 2>/dev/null || xattr -cr "$TMP_DMG_DIR/${APP_NAME}.app" 2>/dev/null || true
 rm -f "$DMG_PATH"
-hdiutil create -volname "$APP_NAME" -srcfolder "$TMP_DMG_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
+hdiutil create -volname "$APP_NAME" -srcfolder "$TMP_DMG_DIR" -ov -format UDZO -imagekey zlib-level=9 "$DMG_PATH" >/dev/null
 rm -rf "$TMP_DMG_DIR"
 
 echo "🔐 簽名 DMG 本身（防止下載後被標記為已損毀）..."
@@ -192,6 +224,13 @@ codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$DMG_PAT
 # 清除 DMG 本身的 quarantine
 xattr -cr "$DMG_PATH" 2>/dev/null || true
 xattr -d com.apple.quarantine "$DMG_PATH" 2>/dev/null || true
+
+echo "🧾 Notarize DMG（讓一般使用者下載後更穩）..."
+DMG_SUBMIT=$(xcrun notarytool submit "$DMG_PATH" "${NOTARY_ARGS[@]}" --wait 2>&1)
+echo "$DMG_SUBMIT" | tail -6
+echo "📌 Staple DMG..."
+xcrun stapler staple "$DMG_PATH" >/dev/null || true
+xcrun stapler validate "$DMG_PATH" >/dev/null || true
 
 echo "✅ 完成：$DMG_PATH"
 echo "下一步：把 DMG 推送到 GitHub 讓網站更新下載（或我可以幫你一鍵 commit/push）。"
