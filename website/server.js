@@ -1486,6 +1486,16 @@ app.post('/api/admin/create-license', async (req, res) => {
 // 下載文件
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
+
+    // ✅ 生產環境推薦：不要把大型 DMG 放進 Git（Vercel 部署容易失敗/變成 LFS 指標檔）
+    // 改用物件儲存（例如 Vercel Blob / S3 / R2）並在這裡做 302 轉址
+    // 在 Vercel 專案環境變數設定：
+    // - MAC_DMG_URL = https://<你的檔案儲存>/ios-location-simulator-mac.dmg
+    // 這樣一般使用者點下載就會直接拿到完整 DMG，不會再出現 134 bytes / 已損毀。
+    if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
+        return res.redirect(302, process.env.MAC_DMG_URL);
+    }
+
     const filePath = path.join(__dirname, 'downloads', file);
     
     // 檢查檔案是否存在
