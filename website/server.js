@@ -1500,7 +1500,11 @@ app.get('/downloads/:file', (req, res) => {
     
     // 檢查檔案是否存在
     if (!fs.existsSync(filePath)) {
-        // 如果 downloads 目錄沒有，嘗試 public 目錄
+        // 如果 downloads 目錄沒有，嘗試 public/downloads 與 public 根目錄
+        const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
+        if (fs.existsSync(publicDownloadsPath)) {
+            return res.sendFile(publicDownloadsPath);
+        }
         const publicPath = path.join(__dirname, 'public', file);
         if (fs.existsSync(publicPath)) {
             return res.sendFile(publicPath);
@@ -2042,7 +2046,7 @@ app.get('/api/health', (req, res) => {
 // 靜態文件服務（放在最後，作為 fallback）
 app.use(express.static('public'));
 app.use('/locales', express.static('locales'));
-app.use('/downloads', express.static('downloads'));
+app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')));
 
 // 404 處理（放在最後）
 app.use((req, res) => {
