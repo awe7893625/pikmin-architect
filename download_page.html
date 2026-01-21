@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pikmin Architect - 下載</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 32px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .feature-list {
+            list-style: none;
+            margin: 30px 0;
+        }
+        .feature-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid #eee;
+            color: #555;
+        }
+        .feature-list li:before {
+            content: "✓ ";
+            color: #34C759;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .pricing {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 30px 0;
+            text-align: center;
+        }
+        .price {
+            font-size: 48px;
+            font-weight: bold;
+            color: #007AFF;
+            margin: 10px 0;
+        }
+        .trial-info {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #856404;
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin: 10px 0;
+        }
+        .btn-primary {
+            background: #007AFF;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #0051D5;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,122,255,0.3);
+        }
+        .btn-trial {
+            background: #34C759;
+            color: white;
+        }
+        .btn-trial:hover {
+            background: #28A745;
+        }
+        .license-section {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+        }
+        .license-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        .license-input:focus {
+            outline: none;
+            border-color: #007AFF;
+        }
+        .warning {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 15px 0;
+            color: #721c24;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Pikmin Architect</h1>
+        <p class="subtitle">專業 GPS 位置模擬工具</p>
+        
+        <ul class="feature-list">
+            <li>精確 GPS 位置模擬</li>
+            <li>真實軌跡播放</li>
+            <li>自訂路線規劃</li>
+            <li>最愛地點管理</li>
+            <li>支援 iOS 設備</li>
+        </ul>
+        
+        <div class="trial-info">
+            <strong>🆓 免費試用</strong><br>
+            前 3 次使用完全免費，無需付費即可體驗完整功能！
+        </div>
+        
+        <div class="pricing">
+            <div style="font-size: 14px; color: #666;">完整版價格</div>
+            <div class="price">NT$ 299</div>
+            <div style="font-size: 14px; color: #666;">一次購買，永久使用</div>
+        </div>
+        
+        <button class="btn btn-trial" onclick="downloadTrial()">
+            🆓 免費試用下載
+        </button>
+        
+        <button class="btn btn-primary" onclick="showPayment()">
+            💳 立即購買
+        </button>
+        
+        <div class="license-section" id="license-section" style="display:none;">
+            <h3 style="margin-bottom: 15px;">已購買？輸入授權碼</h3>
+            <input type="text" class="license-input" id="license-input" placeholder="輸入您的授權碼（例如：PKM-XXXXXXXX）">
+            <button class="btn btn-primary" onclick="downloadWithLicense()" style="margin-top: 10px;">
+                ✅ 下載完整版
+            </button>
+            <div class="warning" id="license-error" style="display:none;"></div>
+        </div>
+        
+        <div class="warning" style="margin-top: 20px;">
+            <strong>⚠️ 重要提示：</strong><br>
+            本軟體會綁定您的 Mac 設備，防止重複下載免費試用。每個設備僅有 3 次免費試用機會。
+        </div>
+    </div>
+    
+    <script>
+        function downloadTrial() {
+            // 這裡應該指向實際的下載連結
+            window.location.href = 'https://your-server.com/download/PikminArchitect.dmg';
+        }
+        
+        function showPayment() {
+            // 這裡應該整合付款系統（例如：綠界、Stripe 等）
+            alert('付款功能開發中，請聯繫客服購買：support@example.com');
+            // 或者跳轉到付款頁面
+            // window.open('https://your-payment-gateway.com/checkout', '_blank');
+        }
+        
+        function downloadWithLicense() {
+            const licenseKey = document.getElementById('license-input').value.trim();
+            if (!licenseKey) {
+                document.getElementById('license-error').textContent = '請輸入授權碼';
+                document.getElementById('license-error').style.display = 'block';
+                return;
+            }
+            
+            // 驗證授權碼並下載
+            fetch('http://localhost:3000/api/license/verify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ licenseKey: licenseKey })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.valid) {
+                    // 下載完整版
+                    window.location.href = 'https://your-server.com/download/PikminArchitect.dmg?license=' + licenseKey;
+                } else {
+                    document.getElementById('license-error').textContent = '授權碼無效';
+                    document.getElementById('license-error').style.display = 'block';
+                }
+            })
+            .catch(err => {
+                document.getElementById('license-error').textContent = '驗證失敗，請稍後再試';
+                document.getElementById('license-error').style.display = 'block';
+            });
+        }
+        
+        // 顯示授權輸入區域
+        function showLicenseSection() {
+            document.getElementById('license-section').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

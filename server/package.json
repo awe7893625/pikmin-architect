@@ -1,0 +1,17 @@
+{
+  "name": "pikmin-auth-server",
+  "version": "1.0.0",
+  "description": "Pikmin Architect 授權驗證服務器",
+  "main": "auth_server.js",
+  "scripts": {
+    "start": "node auth_server.js",
+    "dev": "nodemon auth_server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

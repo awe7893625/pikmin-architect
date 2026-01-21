@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>摃菇 / KongGoo - 專業 iOS GPS 位置模擬工具 | 免費試用一週</title>
+    <meta name="description" content="摃菇 / KongGoo - 專業 iOS GPS 位置模擬工具，免費試用一週！支援 iOS 設備定位修改，儲存喜愛地點，1 年授權 NT$ 690。">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', 'PingFang TC', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            overflow-x: hidden;
+        }
+        
+        /* 導航欄 */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 5%;
+            position: fixed;
+            top: 0;
+            width: 100%;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+        
+        .nav-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+        
+        .nav-links a:hover {
+            color: #667eea;
+        }
+        
+        /* 英雄區塊 */
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 150px 5% 100px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: rotate 20s linear infinite;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .hero-content {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            font-weight: 800;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+            opacity: 0.95;
+        }
+        
+        .trial-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            padding: 12px 30px;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin: 1rem 0;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 18px 50px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2rem;
+            transition: all 0.3s;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-top: 1rem;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+        
+        /* App 介面展示區塊 */
+        .app-showcase {
+            padding: 100px 5%;
+            background: #f8f9fa;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: #333;
+        }
+        
+        .app-preview {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            align-items: center;
+            margin-bottom: 4rem;
+        }
+        
+        .app-mockup {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 30px;
+            padding: 2rem;
+            box-shadow: 0 20px 60px rgba(102, 126, 234, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .app-screen {
+            background: #000;
+            border-radius: 20px;
+            padding: 1.5rem;
+            position: relative;
+        }
+        
+        .app-header {
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(40px);
+            border-radius: 20px;
+            padding: 15px 20px;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .app-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-led {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #34C759;
+            box-shadow: 0 0 10px #34C759;
+        }
+        
+        .app-tabs {
+            display: flex;
+            gap: 8px;
+            background: rgba(0,0,0,0.06);
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .app-tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border-radius: 10px;
+            font-weight: 700;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .app-tab.active {
+            background: white;
+            color: #000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .app-map {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            border-radius: 15px;
+            height: 400px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .map-marker {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #007AFF;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #007AFF;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 10;
+        }
+        
+        .favorite-locations {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+        }
+        
+        .fav-marker {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #34C759;
+            border: 2px solid white;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #34C759;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 5;
+        }
+        
+        .fav-marker:hover {
+            transform: scale(1.5);
+            box-shadow: 0 0 20px #34C759;
+        }
+        
+        .fav-marker::after {
+            content: attr(data-name);
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            white-space: nowrap;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        
+        .fav-marker:hover::after {
+            opacity: 1;
+        }
+        
+        @keyframes flyAnimation {
+            0% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.3); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+        
+        .map-marker.flying {
+            animation: flyAnimation 0.6s ease-in-out;
+        }
+        
+        .travel-line {
+            position: absolute;
+            height: 3px;
+            background: linear-gradient(90deg, #007AFF, #34C759);
+            box-shadow: 0 0 10px rgba(0,122,255,0.5);
+            z-index: 3;
+            transform-origin: left center;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .travel-line.active {
+            opacity: 1;
+        }
+        
+        .app-features-list {
+            list-style: none;
+        }
+        
+        .app-features-list li {
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            background: white;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .app-features-list li::before {
+            content: '✨';
+            font-size: 1.5rem;
+        }
+        
+        /* 功能區塊 */
+        .features {
+            padding: 100px 5%;
+            background: white;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #667eea;
+        }
+        
+        .feature-highlight {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            border-radius: 20px;
+            margin: 2rem 0;
+            text-align: center;
+        }
+        
+        .feature-highlight h3 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+        }
+        
+        /* 操作說明區塊 */
+        .tutorial {
+            padding: 100px 5%;
+            background: #f8f9fa;
+        }
+        
+        .tutorial-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 2rem;
+            margin-top: 3rem;
+        }
+        
+        .tutorial-step {
+            background: white;
+            padding: 2rem;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .step-number {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0 auto 1rem;
+        }
+        
+        /* 限制說明 */
+        .limitations {
+            padding: 80px 5%;
+            background: white;
+            text-align: center;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 2rem auto;
+            max-width: 800px;
+        }
+        
+        /* 價格區塊 */
+        .pricing {
+            padding: 100px 5%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+        
+        .price-card {
+            max-width: 600px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 3rem;
+            border-radius: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .price-amount {
+            font-size: 4rem;
+            font-weight: 800;
+            margin: 1rem 0;
+        }
+        
+        .price-period {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .buy-button {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 18px 50px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.2rem;
+            margin-top: 2rem;
+            transition: all 0.3s;
+        }
+        
+        .buy-button:hover {
+            transform: scale(1.05);
+        }
+        
+        .payment-flow {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2rem;
+            border-radius: 20px;
+            margin-top: 2rem;
+            text-align: left;
+        }
+        
+        .payment-flow h4 {
+            margin-bottom: 1rem;
+            font-size: 1.3rem;
+        }
+        
+        .payment-flow ol {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+        
+        .payment-flow li {
+            counter-increment: step-counter;
+            margin-bottom: 1rem;
+            padding-left: 2.5rem;
+            position: relative;
+        }
+        
+        .payment-flow li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 30px;
+            height: 30px;
+            background: white;
+            color: #667eea;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+        }
+        
+        /* 下載區塊 */
+        .download {
+            padding: 100px 5%;
+            background: #f8f9fa;
+        }
+        
+        .download-buttons {
+            display: flex;
+            gap: 2rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 1rem;
+            background: white;
+            padding: 1.5rem 2.5rem;
+            border-radius: 15px;
+            text-decoration: none;
+            color: #333;
+            font-weight: 600;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        .download-icon {
+            font-size: 2rem;
+        }
+        
+        /* 頁腳 */
+        .footer {
+            background: #2d3748;
+            color: white;
+            padding: 3rem 5%;
+            text-align: center;
+        }
+        
+        /* 動畫演示按鈕樣式 */
+        .demo-tab-btn.active {
+            background: white !important;
+            color: #000 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* 地圖標記樣式 */
+        .demo-marker, .demo-search-marker {
+            background: transparent !important;
+            border: none !important;
+        }
+        
+        /* 響應式 */
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .features-grid, .tutorial-steps {
+                grid-template-columns: 1fr;
+            }
+            
+            .app-preview {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 導航欄 -->
+    <nav class="navbar">
+        <div class="nav-content">
+            <div class="logo">📱 摃菇 / KongGoo</div>
+            <div class="nav-links">
+                <a href="#features">功能</a>
+                <a href="#app">介面</a>
+                <a href="#tutorial">說明</a>
+                <a href="#pricing">價格</a>
+                <a href="#download">下載</a>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- 英雄區塊 -->
+    <section class="hero">
+        <div class="hero-content">
+            <h1>摃菇 / KongGoo - 專業 iOS GPS 位置模擬工具</h1>
+            <p>讓您在 iOS 設備上自由修改定位，模擬真實 GPS 位置，探索世界各地！</p>
+            <div style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); padding: 15px 30px; border-radius: 50px; font-size: 1rem; font-weight: 600; margin: 1rem 0; border: 2px solid rgba(255, 255, 255, 0.3);">
+                🔍 <strong>強大搜索功能：</strong>地標、地址、經緯度都能搜尋，一鍵直接起飛！
+            </div>
+            <div class="trial-badge">🎁 免費試用一週，無需信用卡</div>
+            <p style="font-size: 1rem; opacity: 0.8; margin-top: 1rem;">試用完畢後，只需 NT$ 690 即可使用 1 年所有功能</p>
+            <a href="#download" class="cta-button">立即免費下載試用</a>
+        </div>
+    </section>
+    
+    <!-- App 介面展示 -->
+    <section class="app-showcase" id="app">
+        <div class="container">
+            <h2 class="section-title">完整 App 介面展示</h2>
+            <div style="max-width: 1400px; margin: 0 auto;">
+                <!-- macOS 應用程式視窗模擬 -->
+                <div style="background: #e8e8e8; border-radius: 12px; padding: 8px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                    <!-- macOS 視窗標題欄 -->
+                    <div style="background: #e8e8e8; padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #d0d0d0;">
+                        <div style="display: flex; gap: 6px;">
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #ffbd2e;"></div>
+                            <div style="width: 12px; height: 12px; border-radius: 50%; background: #28ca42;"></div>
+                        </div>
+                        <div style="flex: 1; text-align: center; font-size: 13px; color: #666; font-weight: 500;">摃菇 / KongGoo</div>
+                    </div>
+                    
+                    <!-- App 內容區域（寬屏比例） -->
+                    <div style="display: flex; background: #f5f5f5; min-height: 600px;">
+                        <!-- 左側：地圖區域（佔 65%） -->
+                        <div style="flex: 0 0 65%; position: relative; background: #fff;">
+                            <div id="demoMap" style="width: 100%; height: 100%; min-height: 600px;"></div>
+                            <!-- 地圖標記 -->
+                            <div id="demoMarker" style="position: absolute; width: 20px; height: 20px; background: #007AFF; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 15px #007AFF; top: 50%; left: 50%; transform: translate(-50%, -50%); transition: all 1s cubic-bezier(0.4, 0, 0.2, 1); z-index: 1000; pointer-events: none;"></div>
+                        </div>
+                        
+                        <!-- 右側：控制面板（佔 35%） -->
+                        <div style="flex: 0 0 35%; background: #fff; padding: 20px; display: flex; flex-direction: column; border-left: 1px solid #e0e0e0;">
+                            <!-- 連線狀態 -->
+                            <div style="background: #000; color: #fff; border-radius: 25px; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                                <span style="font-weight: 700; font-size: 14px;">iPhone 已連線</span>
+                                <div style="width: 10px; height: 10px; border-radius: 50%; background: #34C759; box-shadow: 0 0 10px #34C759;"></div>
+                            </div>
+                            
+                            <!-- 座標顯示 -->
+                            <div style="padding: 10px; background: rgba(0,0,0,0.03); border-radius: 10px; margin-bottom: 12px; font-family: monospace; font-size: 13px; color: #666;">
+                                25.033963, 121.564472
+                            </div>
+                            
+                            <!-- 模式按鈕 -->
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <button id="demo-tab-tp" style="flex: 1; padding: 10px; border-radius: 12px; border: none; font-size: 14px; font-weight: 700; color: #666; background: rgba(0,0,0,0.06); cursor: pointer;" class="demo-tab-btn active">瞬移</button>
+                                <button id="demo-tab-route" style="flex: 1; padding: 10px; border-radius: 12px; border: none; font-size: 14px; font-weight: 700; color: #666; background: rgba(0,0,0,0.06); cursor: pointer;" class="demo-tab-btn">散花</button>
+                                <button id="demo-tab-fav" style="flex: 1; padding: 10px; border-radius: 12px; border: none; font-size: 14px; font-weight: 700; color: #666; background: rgba(0,0,0,0.06); cursor: pointer;" class="demo-tab-btn">最愛</button>
+                            </div>
+                            
+                            <!-- GO/STOP 按鈕 -->
+                            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                                <button style="flex: 1; padding: 14px; border-radius: 14px; border: none; font-size: 18px; font-weight: 900; color: white; cursor: pointer; background: #34C759;">GO</button>
+                                <button style="flex: 1; padding: 14px; border-radius: 14px; border: none; font-size: 18px; font-weight: 900; color: white; cursor: pointer; background: #ff453a;">STOP</button>
+                            </div>
+                            
+                            <!-- 加入目前位置按鈕 -->
+                            <button id="demo-add-btn" style="width: 100%; padding: 12px; background: rgba(0,122,255,0.1); color: #007AFF; border: none; border-radius: 12px; font-weight: 700; margin-bottom: 12px; cursor: pointer; display: none;">＋ 加入目前位置</button>
+                            
+                            <!-- 最愛地點列表 -->
+                            <div id="demo-fav-list" style="flex: 1; overflow-y: auto; display: none;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                    <div class="demo-fav-item" style="background: #fff; border-radius: 14px; height: 55px; display: flex; align-items: center; justify-content: center; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; font-size: 13px; padding: 0 8px;" data-lat="25.033963" data-lon="121.564472">台北101</div>
+                                </div>
+                            </div>
+                            
+                            <!-- 搜尋欄（動畫時顯示） -->
+                            <input type="text" id="demo-search" placeholder="🔍 搜尋地點..." style="width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #ddd; background: rgba(0,0,0,0.06); font-size: 15px; margin-top: 12px; outline: none; box-sizing: border-box; display: none;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div style="text-align: center; margin-top: 2rem;">
+                <button id="demo-play-btn" onclick="startDemoAnimation()" style="padding: 15px 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 50px; font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);">
+                    ▶️ 播放完整動畫演示
+                </button>
+            </div>
+        </div>
+    </section>
+    
+    <!-- 功能區塊 -->
+    <section class="features" id="features">
+        <div class="container">
+            <h2 class="section-title">強大功能</h2>
+            <div class="features-grid">
+                <div class="feature-card" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
+                    <div class="feature-icon">🔍</div>
+                    <h3>強大搜索功能 ⭐ 推薦</h3>
+                    <p><strong>最強大的搜索功能！</strong>支援多種搜索方式，讓您快速找到目標地點：</p>
+                    <ul style="margin-top: 1rem; padding-left: 1.5rem; color: #666; text-align: left;">
+                        <li>✅ <strong>地標地點搜索：</strong>直接輸入「台北101」、「東京鐵塔」等地標名稱</li>
+                        <li>✅ <strong>地址搜索：</strong>輸入完整地址或部分地址</li>
+                        <li>✅ <strong>經緯度搜索：</strong>直接輸入座標如「25.033963, 121.564472」</li>
+                        <li>✅ <strong>一鍵起飛：</strong>搜索結果可直接點擊 GO 按鈕立即飛過去</li>
+                    </ul>
+                    <p style="margin-top: 1rem; font-weight: 700; color: #667eea;">無論是地標、地址還是座標，都能快速搜索並直接起飛！</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📍</div>
+                    <h3>精確定位</h3>
+                    <p>支援精確的 GPS 座標定位，可以瞬間移動到世界任何角落，讓您輕鬆模擬不同地區的位置。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🗺️</div>
+                    <h3>路線規劃（散花）</h3>
+                    <p>智能路線規劃功能，可以設定多個地點，自動模擬真實的移動路徑，讓您的定位模擬更加自然。</p>
+                    <div class="warning-box" style="margin-top: 1rem; padding: 1rem; font-size: 0.9rem;">
+                        ⚠️ <strong>注意：</strong>散花功能目前只能維持 5 分鐘，之後會自動停止。這是為了確保定位模擬的穩定性。
+                    </div>
+                </div>
+                <div class="feature-card" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border: 2px solid #667eea;">
+                    <div class="feature-icon">⭐</div>
+                    <h3>儲存喜愛地點 ⭐ 推薦</h3>
+                    <p><strong>最實用的功能！</strong>您可以將常用的地點儲存到「最愛」清單中，之後隨時可以一鍵飛到該地點，無需重新輸入座標！</p>
+                    <ul style="margin-top: 1rem; padding-left: 1.5rem; color: #666;">
+                        <li>✅ 按國家分類管理</li>
+                        <li>✅ 快速切換地點</li>
+                        <li>✅ 支援自訂名稱</li>
+                        <li>✅ 永久保存</li>
+                    </ul>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>多種搜索方式</h3>
+                    <p>強大的搜索功能，支援地標名稱、地址、經緯度座標等多種搜索方式，搜索後可直接點擊 GO 按鈕立即起飛！</p>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(0,122,255,0.1); border-radius: 10px; font-size: 0.9rem;">
+                        <strong>搜索範例：</strong><br>
+                        • 地標：台北101、東京鐵塔<br>
+                        • 地址：台北市信義區信義路五段7號<br>
+                        • 座標：25.033963, 121.564472
+                    </div>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">💻</div>
+                    <h3>跨平台支援</h3>
+                    <p>完美支援 macOS 和 Windows 系統，無論您使用哪種電腦都能輕鬆使用。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>安全可靠</h3>
+                    <p>設備綁定機制，確保授權安全。1 年授權，到期可續費。</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>簡單易用</h3>
+                    <p>直觀的圖形介面，無需技術背景即可輕鬆操作。搜索地點後點擊 GO 即可立即起飛，簡單方便。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- 操作說明 -->
+    <section class="tutorial" id="tutorial">
+        <div class="container">
+            <h2 class="section-title">操作說明</h2>
+            <div class="tutorial-steps">
+                <div class="tutorial-step">
+                    <div class="step-number">1</div>
+                    <h3>下載並安裝</h3>
+                    <p>下載 App 後，開啟「開發者模式」即可使用（macOS 需要在「系統設定」→「隱私權與安全性」中允許）</p>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-number">2</div>
+                    <h3>連接設備</h3>
+                    <p>使用 USB 連接您的 iPhone/iPad，點擊 App 中的「初始化連線」按鈕</p>
+                    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,193,7,0.1); border-radius: 10px; font-size: 0.9rem; text-align: left;">
+                        <strong>⚠️ 重要提示：</strong><br>
+                        <strong>macOS 版本：</strong>點擊「初始化連線」後，系統會彈出 macOS 密碼輸入框，請輸入您的<strong>電腦管理員密碼</strong>以授予權限。這是為了建立與 iOS 設備的連線所必需的。<br><br>
+                        <strong>Windows 版本：</strong>通常不需要輸入密碼，但如果系統提示需要管理員權限，請以管理員身份運行 App 或輸入 Windows 管理員密碼。
+                    </div>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-number">3</div>
+                    <h3>選擇模式</h3>
+                    <p>選擇「瞬移」快速移動到單一地點，或選擇「散花」規劃多點路線</p>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-number">4</div>
+                    <h3>儲存最愛</h3>
+                    <p>在「最愛」模式中，點擊「加入目前位置」即可儲存常用地點，之後隨時可以快速飛回來！</p>
+                </div>
+                <div class="tutorial-step">
+                    <div class="step-number">5</div>
+                    <h3>開始使用</h3>
+                    <p>點擊「GO」按鈕開始模擬定位，點擊「STOP」即可停止</p>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- 價格區塊 -->
+    <section class="pricing" id="pricing">
+        <div class="container">
+            <h2 class="section-title" style="color: white;">選擇方案</h2>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; max-width: 1000px; margin: 0 auto;">
+                <!-- 年費方案 -->
+                <div class="price-card" style="position: relative;">
+                    <div style="position: absolute; top: -10px; right: -10px; background: #34C759; color: white; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 700;">推薦</div>
+                    <h3 style="font-size: 1.8rem; margin-bottom: 1rem;">年費方案</h3>
+                    <div class="price-amount">NT$ 690</div>
+                    <div class="price-period">1 年授權</div>
+                    <ul style="list-style: none; margin: 2rem 0; text-align: left; padding-left: 2rem;">
+                        <li style="margin: 1rem 0;">✅ 所有功能無限制使用</li>
+                        <li style="margin: 1rem 0;">✅ 1 年授權，到期可續費</li>
+                        <li style="margin: 1rem 0;">✅ 免費技術支援</li>
+                        <li style="margin: 1rem 0;">✅ 免費更新升級</li>
+                    </ul>
+                    <a href="#" class="buy-button" onclick="showPaymentModal('annual'); return false;">立即購買</a>
+                </div>
+                
+                <!-- 買斷方案 -->
+                <div class="price-card">
+                    <h3 style="font-size: 1.8rem; margin-bottom: 1rem;">買斷方案</h3>
+                    <div class="price-amount">NT$ 1,750</div>
+                    <div class="price-period">永久授權</div>
+                    <ul style="list-style: none; margin: 2rem 0; text-align: left; padding-left: 2rem;">
+                        <li style="margin: 1rem 0;">✅ 所有功能無限制使用</li>
+                        <li style="margin: 1rem 0;">✅ 永久授權，一次購買終身使用</li>
+                        <li style="margin: 1rem 0;">✅ 免費技術支援</li>
+                        <li style="margin: 1rem 0;">✅ 免費更新升級</li>
+                    </ul>
+                    <a href="#" class="buy-button" onclick="showPaymentModal('lifetime'); return false;">立即購買</a>
+                </div>
+            </div>
+            
+            <div class="payment-flow" style="margin-top: 3rem; max-width: 800px; margin-left: auto; margin-right: auto;">
+                <h4>💳 使用次數滿後如何付款？</h4>
+                <ol>
+                    <li>當免費試用一週到期後，App 會提示您需要購買授權</li>
+                    <li>點擊「立即購買」按鈕，選擇「年費方案」或「買斷方案」：</li>
+                    <li style="margin-left: 2rem; margin-top: 0.5rem;">
+                        <strong>年費方案：</strong>NT$ 690 / 年，適合長期使用<br>
+                        <strong>買斷方案：</strong>NT$ 1,750 一次付清，永久使用
+                    </li>
+                    <li>完成付款後，系統會自動顯示授權碼在成功頁面</li>
+                    <li>在 App 的「授權」頁面輸入授權碼，點擊「激活授權碼」</li>
+                    <li>激活成功後，即可無限制使用所有功能！</li>
+                </ol>
+            </div>
+        </div>
+    </section>
+    
+    <!-- 下載區塊 -->
+    <section class="download" id="download">
+        <div class="container">
+            <h2 class="section-title">立即免費下載</h2>
+            <p style="text-align: center; margin-bottom: 3rem; font-size: 1.1rem; color: #666;">
+                免費試用一週，無需信用卡，立即體驗所有功能！
+            </p>
+            <div class="download-buttons">
+                <a href="#" class="download-btn" onclick="downloadApp('mac'); return false;">
+                    <span class="download-icon">🍎</span>
+                    <div>
+                        <div style="font-weight: 700;">macOS 版本</div>
+                        <div style="font-size: 0.9rem; opacity: 0.7;">適用於 Mac 電腦</div>
+                    </div>
+                </a>
+                <a href="#" class="download-btn" onclick="downloadApp('windows'); return false;">
+                    <span class="download-icon">🪟</span>
+                    <div>
+                        <div style="font-weight: 700;">Windows 版本</div>
+                        <div style="font-size: 0.9rem; opacity: 0.7;">適用於 Windows 電腦</div>
+                    </div>
+                </a>
+            </div>
+            <p style="text-align: center; margin-top: 2rem; font-size: 0.9rem; color: #999;">
+                💡 下載後只需開啟「開發者模式」即可使用，無需其他設定
+            </p>
+        </div>
+    </section>
+    
+    <!-- 頁腳 -->
+    <footer class="footer" id="support">
+        <div style="text-align: center; padding: 1rem 0; font-size: 0.75rem; color: #999; opacity: 0.6;">
+            系統要求：macOS 12.0+ 或 Windows 10+ | 支援 Intel 和 Apple Silicon Mac
+        </div>
+        <div class="container">
+            <h3 style="margin-bottom: 1rem;">需要幫助？</h3>
+            <p style="opacity: 0.8; margin-bottom: 1rem;">如有任何問題，請聯繫客服：awe7893625@gmail.com</p>
+            <p style="opacity: 0.6; font-size: 0.9rem;">© 2024 摃菇 / KongGoo. All rights reserved.</p>
+        </div>
+    </footer>
+    
+    <!-- 付款模態框 -->
+    <div id="paymentModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 2000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 3rem; border-radius: 20px; max-width: 500px; width: 90%; position: relative;">
+            <button onclick="closePaymentModal()" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 2rem; cursor: pointer;">&times;</button>
+            <h2 style="margin-bottom: 1.5rem;">選擇付款方式</h2>
+            <div id="paymentOptions">
+                <!-- 付款選項將由 JavaScript 動態載入 -->
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 平滑滾動
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+        
+        // 顯示付款模態框
+        function showPaymentModal(planType) {
+            const modal = document.getElementById('paymentModal');
+            const options = document.getElementById('paymentOptions');
+            
+            const planInfo = planType === 'annual' ? {
+                name: '年費方案',
+                price: 'NT$ 690',
+                period: '1 年授權',
+                link: `/payment?planType=annual`
+            } : {
+                name: '買斷方案',
+                price: 'NT$ 1,750',
+                period: '永久授權',
+                link: `/payment?planType=lifetime`
+            };
+            
+            options.innerHTML = `
+                <div style="margin-bottom: 1.5rem; padding: 1rem; background: rgba(0,122,255,0.1); border-radius: 10px;">
+                    <div style="font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem;">${planInfo.name}</div>
+                    <div style="font-size: 1.5rem; color: #007AFF; font-weight: 700; margin-bottom: 0.3rem;">${planInfo.price}</div>
+                    <div style="font-size: 0.9rem; color: #666;">${planInfo.period}</div>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <button onclick="redirectToPayment('${planType}')" style="width: 100%; padding: 1rem; background: #007AFF; color: white; border: none; border-radius: 10px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background 0.3s;" onmouseover="this.style.background='#0056b3'" onmouseout="this.style.background='#007AFF'">
+                        💳 前往付款 (Polar)
+                    </button>
+                </div>
+                <p style="font-size: 0.9rem; color: #666; text-align: center;">
+                    支援信用卡付款<br>
+                    付款完成後，系統會自動顯示授權碼在成功頁面
+                </p>
+            `;
+            
+            modal.style.display = 'flex';
+        }
+        
+        // 關閉付款模態框
+        function closePaymentModal() {
+            document.getElementById('paymentModal').style.display = 'none';
+        }
+        
+        // 重定向到付款頁面（使用 Polar）
+        function redirectToPayment(planType) {
+            // 跳轉到服務器創建 Polar checkout
+            // 使用 POST 請求創建付款訂單
+            fetch('/api/payment/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ planType: planType })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    return res.json().then(err => Promise.reject(err));
+                }
+                return res.json();
+            })
+            .then(data => {
+                if (data.paymentUrl) {
+                    // 有付款 URL（Polar 或模擬），直接跳轉
+                    window.location.href = data.paymentUrl;
+                } else if (data.checkoutUrl) {
+                    // 兼容舊格式
+                    window.location.href = data.checkoutUrl;
+                } else {
+                    // 沒有金流設定，跳轉到付款頁面
+                    window.location.href = `/payment?planType=${planType}`;
+                }
+            })
+            .catch(error => {
+                console.error('付款建立失敗:', error);
+                alert('付款建立失敗，請稍後再試');
+            });
+        }
+        
+        // 初始化真實地圖
+        let demoMapInstance = null;
+        let demoMapMarker = null;
+        let demoMapSearchMarker = null;
+        
+        function initDemoMap() {
+            // 台南市座標
+            const tainanLat = 22.9999;
+            const tainanLon = 120.2269;
+            
+            // 使用 Leaflet 創建真實地圖（使用跟 app 一樣的地圖樣式）
+            demoMapInstance = L.map('demoMap', {
+                center: [tainanLat, tainanLon], // 起始位置：台南市
+                zoom: 13,
+                zoomControl: false,
+                attributionControl: false
+            });
+            
+            // 添加地圖圖層（使用跟 app 一樣的 CartoDB Voyager 樣式）
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                maxZoom: 19
+            }).addTo(demoMapInstance);
+            
+            // 添加當前位置標記（起始位置在台南）
+            demoMapMarker = L.marker([tainanLat, tainanLon], {
+                icon: L.divIcon({
+                    className: 'demo-marker',
+                    html: '<div style="width: 20px; height: 20px; background: #007AFF; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 15px #007AFF;"></div>',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(demoMapInstance);
+        }
+        
+        // 完整動畫演示：台南市 → 搜尋台北101 → GO飛過去 → 加入最愛 → 飛去東京
+        let demoAnimationRunning = false;
+        function startDemoAnimation() {
+            if (demoAnimationRunning) return;
+            demoAnimationRunning = true;
+            
+            const playBtn = document.getElementById('demo-play-btn');
+            playBtn.disabled = true;
+            playBtn.textContent = '⏸️ 動畫播放中...';
+            
+            const searchInput = document.getElementById('demo-search');
+            const demoFavorites = document.getElementById('demo-fav-list');
+            const addBtn = document.getElementById('demo-add-btn');
+            const favTab = document.getElementById('demo-tab-fav');
+            const tpTab = document.getElementById('demo-tab-tp');
+            const goBtn = document.querySelector('#fullAppDemo button[style*="background: #34C759"]');
+            
+            // 初始化地圖（如果還沒初始化）
+            if (!demoMapInstance) {
+                initDemoMap();
+            }
+            
+            // 重置狀態：起始位置在台南市
+            const tainanLat = 22.9999;
+            const tainanLon = 120.2269;
+            const taipei101Lat = 25.033963;
+            const taipei101Lon = 121.564472;
+            const tokyoLat = 35.6762;
+            const tokyoLon = 139.6503;
+            
+            if (demoMapSearchMarker) {
+                demoMapInstance.removeLayer(demoMapSearchMarker);
+                demoMapSearchMarker = null;
+            }
+            
+            // 設置起始位置在台南市
+            demoMapInstance.setView([tainanLat, tainanLon], 13, { animate: false });
+            demoMapMarker.setLatLng([tainanLat, tainanLon]);
+            
+            searchInput.style.display = 'block';
+            searchInput.value = '';
+            document.querySelectorAll('.demo-tab-btn').forEach(btn => btn.classList.remove('active'));
+            tpTab.classList.add('active');
+            demoFavorites.style.display = 'none';
+            addBtn.style.display = 'none';
+            
+            // 步驟 1: 在搜尋欄輸入「台北101」
+            setTimeout(() => {
+                searchInput.value = '台北101';
+                searchInput.style.background = 'rgba(0,122,255,0.1)';
+                searchInput.style.border = '2px solid #007AFF';
+                showDemoMessage('🔍 正在搜尋台北 101...');
+            }, 500);
+            
+            // 步驟 2: 顯示搜尋結果（地圖移動到台北 101）
+            setTimeout(() => {
+                demoMapInstance.setView([taipei101Lat, taipei101Lon], 16, {
+                    animate: true,
+                    duration: 1.5
+                });
+                
+                // 添加搜尋結果標記（綠色）
+                demoMapSearchMarker = L.marker([taipei101Lat, taipei101Lon], {
+                    icon: L.divIcon({
+                        className: 'demo-search-marker',
+                        html: '<div style="width: 16px; height: 16px; background: #34C759; border: 3px solid white; border-radius: 50%; box-shadow: 0 0 15px #34C759;"></div>',
+                        iconSize: [16, 16],
+                        iconAnchor: [8, 8]
+                    })
+                }).addTo(demoMapInstance);
+                
+                showDemoMessage('📍 找到台北 101！');
+            }, 2000);
+            
+            // 步驟 3: 按下 GO 按鈕
+            setTimeout(() => {
+                if (goBtn) {
+                    goBtn.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        goBtn.style.transform = 'scale(1)';
+                    }, 150);
+                }
+                showDemoMessage('▶️ 按下 GO 按鈕');
+            }, 3500);
+            
+            // 步驟 4: 飛到台北 101
+            setTimeout(() => {
+                // 先移除搜尋標記（綠色點），只保留藍色標記
+                if (demoMapSearchMarker) {
+                    demoMapInstance.removeLayer(demoMapSearchMarker);
+                    demoMapSearchMarker = null;
+                }
+                
+                const currentPos = demoMapMarker.getLatLng();
+                const targetPos = [taipei101Lat, taipei101Lon];
+                
+                let startTime = Date.now();
+                const duration = 2000;
+                
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const easeProgress = 1 - Math.pow(1 - progress, 3);
+                    
+                    const lat = currentPos.lat + (targetPos[0] - currentPos.lat) * easeProgress;
+                    const lon = currentPos.lng + (targetPos[1] - currentPos.lng) * easeProgress;
+                    
+                    demoMapMarker.setLatLng([lat, lon]);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        demoMapMarker.setLatLng(targetPos);
+                    }
+                }
+                
+                animate();
+                showDemoMessage('🚀 正在飛往台北 101...');
+            }, 4000);
+            
+            // 步驟 5: 到達台北 101，跳出加入最愛
+            setTimeout(() => {
+                // 確保搜尋標記已清除（只保留藍色標記）
+                if (demoMapSearchMarker) {
+                    demoMapInstance.removeLayer(demoMapSearchMarker);
+                    demoMapSearchMarker = null;
+                }
+                
+                document.querySelectorAll('.demo-tab-btn').forEach(btn => btn.classList.remove('active'));
+                favTab.classList.add('active');
+                demoFavorites.style.display = 'block';
+                addBtn.style.display = 'block';
+                
+                showDemoMessage('⭐ 切換到最愛模式，加入目前位置');
+            }, 6500);
+            
+            // 步驟 6: 模擬點擊「加入目前位置」，輸入名稱「台北101」
+            setTimeout(() => {
+                addBtn.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    addBtn.style.transform = 'scale(1)';
+                }, 150);
+                showDemoMessage('💾 輸入最愛地點名稱：台北101');
+            }, 8000);
+            
+            // 步驟 7: 顯示已儲存的最愛地點（包含東京）
+            setTimeout(() => {
+                // 添加東京到最愛列表
+                const favList = demoFavorites.querySelector('.demo-fav-item')?.parentElement;
+                if (favList && !favList.querySelector('[data-name="東京"]')) {
+                    const tokyoItem = document.createElement('div');
+                    tokyoItem.className = 'demo-fav-item';
+                    tokyoItem.style.cssText = 'background: #fff; border-radius: 14px; height: 55px; display: flex; align-items: center; justify-content: center; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; font-size: 13px; padding: 0 8px;';
+                    tokyoItem.textContent = '東京';
+                    tokyoItem.setAttribute('data-lat', tokyoLat);
+                    tokyoItem.setAttribute('data-lon', tokyoLon);
+                    tokyoItem.setAttribute('data-name', '東京');
+                    favList.appendChild(tokyoItem);
+                }
+                
+                showDemoMessage('✅ 已儲存「台北101」到最愛清單');
+            }, 9500);
+            
+            // 步驟 8: 顯示點擊最愛地點「東京」
+            setTimeout(() => {
+                const favList = demoFavorites.querySelector('.demo-fav-item')?.parentElement;
+                const tokyoItem = favList?.querySelector('[data-name="東京"]');
+                if (tokyoItem) {
+                    tokyoItem.style.background = 'rgba(0,122,255,0.1)';
+                    tokyoItem.style.border = '2px solid #007AFF';
+                    tokyoItem.style.animation = 'pulse 0.5s ease-in-out';
+                }
+                showDemoMessage('👆 點擊最愛地點：東京');
+            }, 11000);
+            
+            // 步驟 9: 飛去東京
+            setTimeout(() => {
+                document.querySelectorAll('.demo-tab-btn').forEach(btn => btn.classList.remove('active'));
+                tpTab.classList.add('active');
+                demoFavorites.style.display = 'none';
+                addBtn.style.display = 'none';
+                searchInput.style.display = 'none';
+                
+                // 移動地圖到東京
+                demoMapInstance.setView([tokyoLat, tokyoLon], 13, {
+                    animate: true,
+                    duration: 1.5
+                });
+                
+                const currentPos = demoMapMarker.getLatLng();
+                const targetPos = [tokyoLat, tokyoLon];
+                
+                let startTime = Date.now();
+                const duration = 2500;
+                
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const easeProgress = 1 - Math.pow(1 - progress, 3);
+                    
+                    const lat = currentPos.lat + (targetPos[0] - currentPos.lat) * easeProgress;
+                    const lon = currentPos.lng + (targetPos[1] - currentPos.lng) * easeProgress;
+                    
+                    demoMapMarker.setLatLng([lat, lon]);
+                    
+                    if (progress < 1) {
+                        requestAnimationFrame(animate);
+                    } else {
+                        demoMapMarker.setLatLng(targetPos);
+                    }
+                }
+                
+                animate();
+                showDemoMessage('🚀 正在飛往東京...');
+            }, 12500);
+            
+            // 步驟 10: 到達東京
+            setTimeout(() => {
+                showDemoMessage('✅ 已到達東京！');
+            }, 15000);
+            
+            // 步驟 11: 重置動畫
+            setTimeout(() => {
+                searchInput.value = '';
+                searchInput.style.background = 'rgba(0,0,0,0.06)';
+                searchInput.style.border = '1px solid #ddd';
+                searchInput.style.display = 'none';
+                
+                document.querySelectorAll('.demo-tab-btn').forEach(btn => btn.classList.remove('active'));
+                tpTab.classList.add('active');
+                
+                demoFavorites.style.display = 'none';
+                addBtn.style.display = 'none';
+                
+                // 移除東京項目（如果存在）
+                const tokyoItem = demoFavorites.querySelector('[data-name="東京"]');
+                if (tokyoItem) {
+                    tokyoItem.remove();
+                }
+                
+                if (demoMapSearchMarker) {
+                    demoMapInstance.removeLayer(demoMapSearchMarker);
+                    demoMapSearchMarker = null;
+                }
+                
+                // 重置地圖到台南
+                demoMapInstance.setView([tainanLat, tainanLon], 13, {
+                    animate: true,
+                    duration: 0.5
+                });
+                demoMapMarker.setLatLng([tainanLat, tainanLon]);
+                
+                hideDemoMessage();
+                
+                playBtn.disabled = false;
+                playBtn.textContent = '▶️ 播放完整動畫演示';
+                demoAnimationRunning = false;
+            }, 17000);
+        }
+        
+        // 頁面載入時初始化地圖
+        window.addEventListener('load', () => {
+            setTimeout(initDemoMap, 500);
+        });
+        
+        // 顯示動畫提示訊息
+        function showDemoMessage(text) {
+            let msgDiv = document.getElementById('demo-message');
+            if (!msgDiv) {
+                msgDiv = document.createElement('div');
+                msgDiv.id = 'demo-message';
+                msgDiv.style.position = 'absolute';
+                msgDiv.style.top = '20px';
+                msgDiv.style.left = '50%';
+                msgDiv.style.transform = 'translateX(-50%)';
+                msgDiv.style.background = 'rgba(0,0,0,0.8)';
+                msgDiv.style.color = 'white';
+                msgDiv.style.padding = '12px 24px';
+                msgDiv.style.borderRadius = '20px';
+                msgDiv.style.fontSize = '14px';
+                msgDiv.style.fontWeight = '600';
+                msgDiv.style.zIndex = '2000';
+                msgDiv.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+                document.getElementById('fullAppDemo').appendChild(msgDiv);
+            }
+            msgDiv.textContent = text;
+            msgDiv.style.opacity = '0';
+            msgDiv.style.transform = 'translateX(-50%) translateY(-10px)';
+            setTimeout(() => {
+                msgDiv.style.transition = 'all 0.3s';
+                msgDiv.style.opacity = '1';
+                msgDiv.style.transform = 'translateX(-50%) translateY(0)';
+            }, 10);
+        }
+        
+        function hideDemoMessage() {
+            const msgDiv = document.getElementById('demo-message');
+            if (msgDiv) {
+                msgDiv.style.opacity = '0';
+                msgDiv.style.transform = 'translateX(-50%) translateY(-10px)';
+                setTimeout(() => {
+                    if (msgDiv.parentNode) {
+                        msgDiv.parentNode.removeChild(msgDiv);
+                    }
+                }, 300);
+            }
+        }
+        
+        // 添加 pulse 動畫
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.05); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // 下載 App
+        function downloadApp(platform) {
+            const downloadLinks = {
+                'mac': '/downloads/ios-location-simulator-mac.dmg',
+                'windows': '/downloads/ios-location-simulator-windows.exe'
+            };
+            
+            const link = downloadLinks[platform];
+            if (link) {
+                // 直接下載
+                window.location.href = link;
+            } else {
+                alert(`即將提供 ${platform === 'mac' ? 'macOS' : 'Windows'} 版本下載連結\n\n目前可以聯繫客服獲取下載連結。`);
+            }
+        }
+        
+        // 檢查授權碼
+        function checkLicense() {
+            const licenseKey = prompt('請輸入您的授權碼：');
+            if (licenseKey) {
+                fetch('/api/license/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ licenseKey: licenseKey })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.valid) {
+                        window.location.href = data.downloadUrl;
+                    } else {
+                        alert('授權碼無效，請確認後再試');
+                    }
+                })
+                .catch(err => {
+                    alert('驗證失敗，請稍後再試');
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+=== 測試激活碼（5 組）===
+
+這些激活碼可以給您的朋友測試使用。每個激活碼只能使用一次，綁定到一個設備。
+
+1. PKM-9A0EF1DD632BBC1D
+2. PKM-CF711BA7A0DBC80C
+3. PKM-2CA9C96C3A8AB6E8
+4. PKM-FE6C8F8CB7F37339
+5. PKM-F7EC3C6305756F6C
+
+=== 使用說明 ===
+
+1. 將這些激活碼添加到 auth_server.js 的 licenses Map 中
+2. 或通過 /api/admin/create-license API 創建
+3. 每個激活碼只能使用一次
+4. 激活後會綁定到設備的 UUID
+
+=== 如何添加到 auth_server.js ===
+
+在 server/auth_server.js 的 licenses Map 初始化處添加：
+
+const licenses = new Map([
+    ['PKM-9A0EF1DD632BBC1D', {
+        deviceId: null,
+        paidAt: new Date().toISOString(),
+        isValid: true,
+        createdAt: new Date().toISOString()
+    }],
+    ['PKM-CF711BA7A0DBC80C', {
+        deviceId: null,
+        paidAt: new Date().toISOString(),
+        isValid: true,
+        createdAt: new Date().toISOString()
+    }],
+    ['PKM-2CA9C96C3A8AB6E8', {
+        deviceId: null,
+        paidAt: new Date().toISOString(),
+        isValid: true,
+        createdAt: new Date().toISOString()
+    }],
+    ['PKM-FE6C8F8CB7F37339', {
+        deviceId: null,
+        paidAt: new Date().toISOString(),
+        isValid: true,
+        createdAt: new Date().toISOString()
+    }],
+    ['PKM-F7EC3C6305756F6C', {
+        deviceId: null,
+        paidAt: new Date().toISOString(),
+        isValid: true,
+        createdAt: new Date().toISOString()
+    }]
+]);
+
+=== 安全確認 ===
+
+✅ 每個激活碼只能使用一次
+✅ 激活後會綁定到設備 UUID
+✅ 如果嘗試在其他設備使用已激活的碼，會返回錯誤
+✅ 授權碼格式：PKM- + 16 位大寫字母和數字

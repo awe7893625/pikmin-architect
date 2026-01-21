@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KongGoo</key>
+	<array>
+		<dict>
+			<key>architectures</key>
+			<array>
+				<string>x86_64</string>
+				<string>arm64</string>
+			</array>
+			<key>buildNumber</key>
+			<string>1</string>
+			<key>certificate</key>
+			<dict>
+				<key>SHA1</key>
+				<string>96FF866480DB3111EE9B0D921FD1F3CAC59A73F3</string>
+				<key>dateExpires</key>
+				<string>2031/1/16</string>
+				<key>type</key>
+				<string>Developer ID Application</string>
+			</dict>
+			<key>entitlements</key>
+			<dict>
+				<key>com.apple.security.network.client</key>
+				<true/>
+			</dict>
+			<key>name</key>
+			<string>KongGoo.app</string>
+			<key>team</key>
+			<dict>
+				<key>id</key>
+				<string>PGP6W5JT82</string>
+				<key>name</key>
+				<string>chengyu lin</string>
+			</dict>
+			<key>versionNumber</key>
+			<string>1.0</string>
+		</dict>
+	</array>
+</dict>
+</plist>

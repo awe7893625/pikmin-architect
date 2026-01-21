@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --apple-blue: #007AFF; --apple-green: #30d158; --apple-red: #ff453a; --glass: rgba(255, 255, 255, 0.94); }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, sans-serif; background: #000; overflow: hidden; }
+        #map { width: 100%; height: 100%; z-index: 1; }
+        .glass-panel {
+            position: fixed; top: 20px; right: 20px; width: 340px; height: calc(100% - 40px); z-index: 1000;
+            background: var(--glass); backdrop-filter: blur(40px); border-radius: 35px; padding: 20px;
+            box-sizing: border-box; display: flex; flex-direction: column; box-shadow: 0 15px 45px rgba(0,0,0,0.2);
+        }
+        .island { background: #000; color: #fff; border-radius: 25px; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; cursor: pointer; }
+        #led { width: 10px; height: 10px; border-radius: 50%; background: var(--apple-red); }
+        .search-bar { width: 100%; padding: 12px; border-radius: 12px; border: none; background: rgba(0,0,0,0.06); font-size: 15px; margin-bottom: 12px; outline: none; box-sizing: border-box; }
+        .mode-tabs { display: flex; background: rgba(0,0,0,0.06); border-radius: 12px; padding: 4px; margin-bottom: 12px; }
+        .tab { flex: 1; padding: 10px 0; text-align: center; font-size: 16px; font-weight: 800; cursor: pointer; border-radius: 10px; color: #666; }
+        .tab.active { background: #fff; color: #000; box-shadow: 0 3px 8px rgba(0,0,0,0.1); }
+        .action-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .btn-action { flex: 1; padding: 14px; border-radius: 14px; border: none; font-size: 18px; font-weight: 900; color: white; cursor: pointer; }
+        .btn-go { background: var(--apple-green); }
+        .btn-stop { background: var(--apple-red); }
+        .nav-section { flex: 1; overflow-y: auto; padding-right: 5px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-loc { background: #fff; border-radius: 14px; height: 55px; display: flex; align-items: center; justify-content: center; font-weight: 700; cursor: move; position: relative; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; padding: 0 5px; user-select: none; }
+        .btn-loc.dragging { opacity: 0.5; transform: scale(0.95); }
+        .btn-loc.drag-over { border: 2px dashed var(--apple-blue); }
+        .country-group { margin-bottom: 15px; }
+        .country-header { background: rgba(0,122,255,0.1); color: var(--apple-blue); padding: 8px 12px; border-radius: 10px; font-weight: 800; font-size: 13px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+        .country-header:hover { background: rgba(0,122,255,0.15); }
+        .country-toggle { font-size: 11px; opacity: 0.7; }
+        .country-items { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .country-items.collapsed { display: none; }
+        .country-content { display: flex; flex-direction: column; }
+        .country-content.collapsed { display: none; }
+        .city-group { margin-bottom: 8px; }
+        #loc-list.fav-mode { display: flex; flex-direction: column; }
+        /* 上線版本：移除「長按抖動刪除最愛」相關 UI */
+        .apple-blue-dot { width: 14px !important; height: 14px !important; background: var(--apple-blue); border: 2.5px solid #fff; border-radius: 50%; box-shadow: 0 0 10px var(--apple-blue); }
+        .preview-dot { width: 14px !important; height: 14px !important; background: none; border: 3px solid var(--apple-green); border-radius: 50%; box-shadow: 0 0 8px var(--apple-green); }
+
+        #apple-modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:3000; display:none; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
+        .modal-content { background:#fff; width:270px; border-radius:20px; text-align:center; overflow:hidden; }
+        .modal-footer { display:flex; border-top:1px solid #eee; }
+        .modal-btn { flex:1; padding:15px; border:none; background:none; font-size:17px; color:var(--apple-blue); cursor:pointer; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="glass-panel" onclick="event.stopPropagation()">
+        <div class="island" onclick="reconnect()">
+            <span id="st-text"> 點擊初始化連線</span>
+            <div id="led"></div>
+        </div>
+        <input type="text" class="search-bar" id="search" placeholder="🔍 搜尋地點..." onkeypress="if(event.keyCode==13) searchLocation()">
+        <div class="mode-tabs">
+            <div class="tab active" id="t1" onclick="setMode('tp')">瞬移</div>
+            <div class="tab" id="t2" onclick="setMode('route')">散花</div>
+            <div class="tab" id="t3" onclick="setMode('fav')">最愛</div>
+        </div>
+        <div id="trial-status-bar" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:13px; margin-bottom:12px; text-align:center; display:block;">
+            🎁 剩餘免費次數: <span id="remaining-trial-count-bar">載入中...</span>
+        </div>
+        <div class="action-row">
+            <button class="btn-action btn-go" onclick="run()" data-i18n="go">GO</button>
+            <button class="btn-action btn-stop" onclick="stopAll()" data-i18n="stop">STOP</button>
+        </div>
+        <div id="fav-ui" style="display:none; margin-bottom:12px;">
+            <button onclick="openModal()" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:12px; font-weight:700; margin-bottom:8px;" data-i18n="addCurrentLocation">＋ 加入目前位置</button>
+            <button onclick="migrateFavoritesWithCountry().then(() => {alert('✅ 地址分類更新完成！'); renderList();})" style="width:100%; padding:10px; background:rgba(52,199,89,0.1); color:#34C759; border:none; border-radius:12px; font-weight:600; font-size:13px; margin-bottom:8px;" data-i18n="updateAddressCategory">📍 更新地址分類</button>
+        </div>
+        <div id="auth-ui" style="display:none; margin-bottom:12px; padding:12px; background:rgba(255,193,7,0.1); border-radius:12px;">
+            <div style="font-size:12px; color:#666; margin-bottom:8px;">授權狀態</div>
+            <div id="trial-status" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:14px; margin-bottom:8px; text-align:center;">
+                <span data-i18n="remainingTrial">🎁 剩餘免費次數</span>: <span id="remaining-trial-count" data-i18n="loading">載入中...</span>
+            </div>
+            <button onclick="checkAuthStatus()" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:10px; font-weight:600; font-size:13px; margin-bottom:8px;" data-i18n="checkAuth">🔍 檢查授權</button>
+            <input type="text" id="license-input" data-i18n-placeholder="licenseInput" placeholder="輸入授權碼" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ddd; font-size:13px; margin-bottom:8px; box-sizing:border-box;">
+            <button onclick="activateLicense()" style="width:100%; padding:10px; background:rgba(52,199,89,0.1); color:#34C759; border:none; border-radius:10px; font-weight:600; font-size:13px;" data-i18n="activateLicense">✅ 激活授權碼</button>
+        </div>
+        <div class="nav-section"><div class="grid" id="loc-list"></div></div>
+    </div>
+
+    <div id="apple-modal">
+        <div class="modal-content">
+            <div style="padding:20px"><h3 data-i18n="saveFavorite">儲存最愛</h3><input type="text" id="fav-name" class="search-bar" data-i18n-placeholder="name" placeholder="名稱"></div>
+            <div class="modal-footer">
+                <button class="modal-btn" style="color:red" onclick="closeModal()" data-i18n="cancel">取消</button>
+                <button class="modal-btn" onclick="saveFav()" data-i18n="save">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // 多語言支援
+        let currentLang = localStorage.getItem('appLanguage') || 'zh-TW';
+        let translations = {};
+        
+        async function loadLanguage(lang) {
+            try {
+                const langPath = `locales/${lang}.json`;
+                const response = await fetch(langPath);
+                if (response.ok) {
+                    translations = await response.json();
+                    applyTranslations();
+                    currentLang = lang;
+                    localStorage.setItem('appLanguage', lang);
+                    updateLangButtons();
+                }
+            } catch (error) {
+                console.error('Failed to load language:', error);
+            }
+        }
+        
+        function applyTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[key]) {
+                    el.textContent = translations[key];
+                }
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                if (translations[key]) {
+                    el.placeholder = translations[key];
+                }
+            });
+        }
+        
+        function setLanguage(lang) {
+            loadLanguage(lang);
+        }
+        
+        function updateLangButtons() {
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                if (btn.getAttribute('data-lang') === currentLang) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+        
+        // 初始化語言
+        loadLanguage(currentLang);
+        
+        var map = L.map('map', {zoomControl: false, attributionControl: false}).setView([25.033, 121.565], 16);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+
+        var pikmin = L.marker([25.033, 121.565], { icon: L.divIcon({ className: 'apple-blue-dot' }) }).addTo(map);
+        var targetMarker = L.marker([0,0], { icon: L.divIcon({ className: 'preview-dot' }) });
+        var pathLine = L.polyline([], {color: '#007AFF', weight: 6}).addTo(map);
+
+        var routePoints = [], currentMode = 'tp', pendingCoord = null;
+
+        const defaultLocs = [
+            {n:"宜蘭", la:24.7545, lo:121.7582}, {n:"陽明山", la:25.1558, lo:121.5477},
+            {n:"墾丁", la:21.9463, lo:120.7967}, {n:"花蓮", la:23.9933, lo:121.6012},
+            {n:"屏東", la:22.6690, lo:120.4861}, {n:"龍潭", la:24.8675, lo:121.2136}
+        ];
+
+        function setMode(m) {
+            currentMode = m;
+            routePoints = []; pathLine.setLatLngs([]);
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            const tabMap = {'tp':'t1', 'route':'t2', 'fav':'t3'};
+            document.getElementById(tabMap[m]).classList.add('active');
+            document.getElementById('fav-ui').style.display = (m==='fav')?'block':'none';
+            renderList();
+        }
+        
+        // 檢查是否需要顯示激活 UI（只在次數用完時顯示）
+        function checkAndShowActivationUI() {
+            const remainingEl = document.getElementById('remaining-trial-count');
+            if(!remainingEl) return;
+            
+            const remainingText = remainingEl.textContent.trim();
+            // 如果剩餘次數為 0 或顯示「請購買授權」，顯示激活 UI
+            if(remainingText === '0 次（請購買授權）' || remainingText === '0' || remainingText.includes('請購買')) {
+                document.getElementById('auth-ui').style.display = 'block';
+            } else {
+                document.getElementById('auth-ui').style.display = 'none';
+            }
+        }
+        
+        function checkAuthStatus() {
+            window.webkit.messageHandlers.bridge.postMessage({ act: 'checkAuth' });
+        }
+        
+        function activateLicense() {
+            const key = document.getElementById('license-input').value.trim();
+            if(!key) {
+                alert('請輸入授權碼');
+                return;
+            }
+            window.webkit.messageHandlers.bridge.postMessage({ act: 'activateLicense', licenseKey: key });
+        }
+        
+        // 更新剩餘試用次數顯示
+        function updateTrialStatus(remaining, isPaid) {
+            const countEl = document.getElementById('remaining-trial-count');
+            const statusEl = document.getElementById('trial-status');
+            const barCountEl = document.getElementById('remaining-trial-count-bar');
+            const barEl = document.getElementById('trial-status-bar');
+            
+            // 更新激活 UI 中的顯示
+            if(countEl && statusEl) {
+                if(isPaid) {
+                    countEl.textContent = '已購買，無限制使用';
+                    statusEl.style.background = 'rgba(52,199,89,0.1)';
+                    statusEl.style.color = '#34C759';
+                    document.getElementById('auth-ui').style.display = 'none';
+                } else {
+                    countEl.textContent = remaining + ' 次';
+                    if(remaining === 0) {
+                        statusEl.style.background = 'rgba(255,59,48,0.1)';
+                        statusEl.style.color = '#FF3B30';
+                        countEl.textContent = '0 次（請購買授權）';
+                        // 次數用完時，自動顯示激活 UI
+                        document.getElementById('auth-ui').style.display = 'block';
+                    } else {
+                        statusEl.style.background = 'rgba(0,122,255,0.1)';
+                        statusEl.style.color = 'var(--apple-blue)';
+                        // 還有次數時，隱藏激活 UI
+                        document.getElementById('auth-ui').style.display = 'none';
+                    }
+                }
+            }
+            
+            // 更新頂部狀態欄顯示（始終顯示）
+            if(barCountEl && barEl) {
+                if(isPaid) {
+                    barCountEl.textContent = '已購買，無限制使用';
+                    barEl.style.background = 'rgba(52,199,89,0.1)';
+                    barEl.style.color = '#34C759';
+                } else {
+                    barCountEl.textContent = remaining + ' 次';
+                    if(remaining === 0) {
+                        barEl.style.background = 'rgba(255,59,48,0.1)';
+                        barEl.style.color = '#FF3B30';
+                        barCountEl.textContent = '0 次（請購買授權）';
+                    } else {
+                        barEl.style.background = 'rgba(0,122,255,0.1)';
+                        barEl.style.color = 'var(--apple-blue)';
+                    }
+                }
+                barEl.style.display = 'block';
+            }
+        }
+        
+
+        // 清理多語言分隔符（處理 "台灣;台灣" 或 "紐約/紐約" 這種格式）
+        function cleanName(name) {
+            if(!name) return '';
+            // 移除分號和斜線分隔的多語言版本，只保留第一個
+            return name.split(/[;\/]/)[0].trim();
+        }
+        
+        // 從地點名稱提取國家前綴（例如：US_存菇 -> US）
+        function getCountryFromName(name) {
+            if(!name) return null;
+            const match = name.match(/^([A-Z]{2})_/);
+            if(match) {
+                const code = match[1].toLowerCase();
+                const codeMap = {
+                    'us': '美國',
+                    'ca': '加拿大',
+                    'nz': '紐西蘭',
+                    'au': '澳洲',
+                    'jp': '日本',
+                    'tw': '台灣',
+                    'cn': '中國',
+                    'kr': '韓國',
+                    'gb': '英國',
+                    'fr': '法國',
+                    'de': '德國',
+                    'mx': '墨西哥',
+                    'br': '巴西',
+                    'in': '印度',
+                    'sg': '新加坡',
+                    'hk': '香港',
+                    'th': '泰國',
+                    'ph': '菲律賓',
+                    'id': '印尼',
+                    'my': '馬來西亞'
+                };
+                return codeMap[code] || null;
+            }
+            return null;
+        }
+        
+        // 根據地址信息獲取國家
+        function getCountry(address, locationName) {
+            if(!address) {
+                // 如果沒有地址信息，嘗試從名稱提取
+                if(locationName) {
+                    const nameCountry = getCountryFromName(locationName);
+                    if(nameCountry) return nameCountry;
+                }
+                return '未知國家';
+            }
+            
+            // 優先使用 country_code（最準確）
+            if(address.country_code) {
+                const code = address.country_code.toLowerCase();
+                // 國家代碼映射
+                const codeMap = {
+                    'tw': '台灣',
+                    'us': '美國',
+                    'nz': '紐西蘭',
+                    'au': '澳洲',
+                    'jp': '日本',
+                    'cn': '中國',
+                    'kr': '韓國',
+                    'gb': '英國',
+                    'fr': '法國',
+                    'de': '德國',
+                    'ca': '加拿大',
+                    'mx': '墨西哥',
+                    'br': '巴西',
+                    'in': '印度',
+                    'sg': '新加坡',
+                    'hk': '香港',
+                    'th': '泰國',
+                    'ph': '菲律賓',
+                    'id': '印尼',
+                    'my': '馬來西亞'
+                };
+                if(codeMap[code]) {
+                    return codeMap[code];
+                }
+            }
+            
+            // 其次使用 country 欄位
+            if(address.country) {
+                const country = cleanName(address.country);
+                // 國家名稱映射（統一顯示）
+                const countryMap = {
+                    '台灣': '台灣',
+                    '臺灣': '台灣',
+                    'Taiwan': '台灣',
+                    'United States': '美國',
+                    'United States of America': '美國',
+                    '美國': '美國',
+                    'USA': '美國',
+                    'New Zealand': '紐西蘭',
+                    '紐西蘭': '紐西蘭',
+                    '新西蘭': '紐西蘭',
+                    'Australia': '澳洲',
+                    '澳洲': '澳洲',
+                    'Japan': '日本',
+                    '日本': '日本',
+                    'Canada': '加拿大',
+                    '加拿大': '加拿大',
+                    '中國': '中國',
+                    'China': '中國',
+                    '韓國': '韓國',
+                    'South Korea': '韓國',
+                    'Korea': '韓國'
+                };
+                return countryMap[country] || country;
+            }
+            
+            // 如果地址信息不完整，嘗試從名稱提取
+            if(locationName) {
+                const nameCountry = getCountryFromName(locationName);
+                if(nameCountry) return nameCountry;
+            }
+            
+            return '未知國家';
+        }
+        
+        // 根據地址信息獲取城市/地區信息
+        function getCityOrRegion(address) {
+            if(!address) return '';
+            // 優先順序：city > town > village > state > province
+            if(address.city) return cleanName(address.city);
+            if(address.town) return cleanName(address.town);
+            if(address.village) return cleanName(address.village);
+            if(address.state) return cleanName(address.state);
+            if(address.province) return cleanName(address.province);
+            return '';
+        }
+        
+        // 根據地址信息獲取完整分類標籤（用於顯示）
+        function getLocationCategory(address) {
+            const country = getCountry(address);
+            const city = getCityOrRegion(address);
+            if(city) {
+                return `${city}, ${country}`;
+            }
+            return country;
+        }
+
+        // 為舊的最愛地點自動獲取地址信息
+        async function migrateFavoritesWithCountry() {
+            let favs = JSON.parse(localStorage.getItem('favLocs') || '[]');
+            let needsUpdate = false;
+            let updatedCount = 0;
+            
+            // 顯示加載提示
+            const list = document.getElementById('loc-list');
+            if(list) {
+                list.innerHTML = '<div style="padding:20px; text-align:center; color:#666;">正在更新地址分類... (0/' + favs.length + ')</div>';
+            }
+            
+            for(let i = 0; i < favs.length; i++) {
+                // 如果沒有 addressInfo 或 country，就獲取地址信息
+                if(!favs[i].addressInfo || !favs[i].country || favs[i].country === '未知國家' || favs[i].country === '未知地區') {
+                    try {
+                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${favs[i].la}&lon=${favs[i].lo}&addressdetails=1&accept-language=zh-TW,zh,en`);
+                        const data = await res.json();
+                        if(data && data.address) {
+                            // 保存完整地址信息
+                            favs[i].addressInfo = data.address;
+                            // 只提取國家（不保存城市信息）
+                            // 如果 API 返回的國家與名稱前綴不符，優先使用名稱前綴
+                            const nameCountry = getCountryFromName(favs[i].n);
+                            const apiCountry = getCountry(data.address, favs[i].n);
+                            
+                            // 如果名稱有國家前綴且與 API 結果不符，使用名稱前綴
+                            if(nameCountry && apiCountry !== nameCountry) {
+                                console.warn(`地點 ${favs[i].n}: API 返回 ${apiCountry}，但名稱前綴為 ${nameCountry}，使用名稱前綴`);
+                                favs[i].country = nameCountry;
+                            } else {
+                                favs[i].country = apiCountry;
+                            }
+                            favs[i].category = favs[i].country; // 簡化為只保存國家
+                            
+                            needsUpdate = true;
+                            updatedCount++;
+                            
+                            // 更新進度顯示
+                            if(list && i % 3 === 0) {
+                                list.innerHTML = '<div style="padding:20px; text-align:center; color:#666;">正在更新地址分類... (' + updatedCount + '/' + favs.length + ')</div>';
+                            }
+                        } else {
+                            favs[i].country = '未知國家';
+                            favs[i].category = '未知國家';
+                            needsUpdate = true;
+                        }
+                        // 避免請求過快，稍微延遲
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                    } catch(err) {
+                        console.error('獲取地址信息失敗:', err, favs[i]);
+                        favs[i].country = '未知國家';
+                        favs[i].category = '未知國家';
+                        needsUpdate = true;
+                    }
+                }
+            }
+            
+            if(needsUpdate) {
+                localStorage.setItem('favLocs', JSON.stringify(favs));
+            }
+            
+            return favs;
+        }
+
+        function renderList() {
+            const list = document.getElementById('loc-list'); 
+            list.innerHTML = '';
+            // 根據模式設置 CSS 類
+            if(currentMode === 'fav') {
+                list.classList.add('fav-mode');
+            } else {
+                list.classList.remove('fav-mode');
+            }
+            
+            if(currentMode === 'route') return;
+            const key = currentMode==='fav'?'favLocs':'tpLocs';
+            let items = JSON.parse(localStorage.getItem(key) || '[]');
+            // ✅ 上線版本：最愛預設最多只有東京（避免個資混入）
+            if (currentMode === 'fav' && items.length === 0) {
+                items = [{ n: '東京', la: 35.6762, lo: 139.6503, country: '日本', category: '日本' }];
+                localStorage.setItem('favLocs', JSON.stringify(items));
+            }
+            if(currentMode === 'tp' && items.length === 0) items = defaultLocs;
+            
+            // 不再自動遷移，只在手動點擊時執行
+            renderListContent(list, items, currentMode, key);
+        }
+        
+        function renderListContent(list, items, mode, key) {
+            // 如果是最愛模式，按照地址分類分組
+            if(mode === 'fav' && items.length > 0) {
+                // 先按國家分組，再在國家內按城市/地區分組
+                const groupedByCountry = {};
+                items.forEach((l, idx) => {
+                    // 只獲取國家信息（不關心城市）
+                    let country = '未知國家';
+                    
+                    // 優先使用 addressInfo（最準確）
+                    if(l.addressInfo) {
+                        country = getCountry(l.addressInfo, l.n);
+                        // 如果名稱有國家前綴且與保存的國家不符，使用名稱前綴
+                        const nameCountry = getCountryFromName(l.n);
+                        if(nameCountry && country !== nameCountry) {
+                            country = nameCountry;
+                        }
+                    } 
+                    // 其次使用已保存的 country 欄位
+                    else if(l.country && l.country !== '未知國家' && l.country !== '未知地區') {
+                        country = l.country;
+                    }
+                    // 如果都沒有，嘗試從 category 中提取國家（舊格式：城市, 國家）
+                    else if(l.category && l.category.includes(',')) {
+                        const parts = l.category.split(',').map(s => s.trim());
+                        if(parts.length >= 2) {
+                            country = parts[parts.length - 1]; // 最後一部分是國家
+                        } else {
+                            country = l.category;
+                        }
+                    }
+                    // 最後使用 category（如果只是國家名稱）
+                    else if(l.category) {
+                        country = l.category;
+                    }
+                    
+                    // 保存到項目中
+                    l.country = country;
+                    l.category = country; // 簡化為只保存國家
+                    
+                    // 按國家分組（直接使用數組，不按城市分組）
+                    if(!groupedByCountry[country]) {
+                        groupedByCountry[country] = [];
+                    }
+                    
+                    // 使用座標作為唯一標識，避免索引問題
+                    groupedByCountry[country].push({...l, uniqueId: `${l.la}_${l.lo}_${l.n}`});
+                });
+                
+                // 保存更新後的數據
+                localStorage.setItem(key, JSON.stringify(items));
+
+                // 按照國家名稱排序
+                const sortedCountries = Object.keys(groupedByCountry).sort();
+
+                sortedCountries.forEach(country => {
+                    const countryItems = groupedByCountry[country];
+                    const totalItems = countryItems.length;
+                    
+                    // 創建國家分組容器
+                    const countryGroup = document.createElement('div');
+                    countryGroup.className = 'country-group';
+                    
+                    // 創建國家標題
+                    const countryHeader = document.createElement('div');
+                    countryHeader.className = 'country-header';
+                    countryHeader.innerHTML = `<span>${country} (${totalItems})</span><span class="country-toggle">▼</span>`;
+                    countryHeader.onclick = (e) => {
+                        e.stopPropagation();
+                        const contentDiv = countryHeader.nextElementSibling;
+                        if(contentDiv.classList.contains('collapsed')) {
+                            contentDiv.classList.remove('collapsed');
+                            countryHeader.querySelector('.country-toggle').textContent = '▼';
+                        } else {
+                            contentDiv.classList.add('collapsed');
+                            countryHeader.querySelector('.country-toggle').textContent = '▶';
+                        }
+                    };
+                    
+                    // 創建國家內容容器（只顯示地點，不按城市分組）
+                    const countryContentDiv = document.createElement('div');
+                    countryContentDiv.className = 'country-content';
+                    
+                    // 創建地點容器（直接顯示所有地點）
+                    const countryItemsDiv = document.createElement('div');
+                    countryItemsDiv.className = 'country-items';
+                    
+                    // 顯示該國家所有地點
+                    countryItems.forEach((l) => {
+                        const div = createLocationButton(l, key, items);
+                        countryItemsDiv.appendChild(div);
+                    });
+                    
+                    countryContentDiv.appendChild(countryItemsDiv);
+                    
+                    countryGroup.appendChild(countryHeader);
+                    countryGroup.appendChild(countryContentDiv);
+                    list.appendChild(countryGroup);
+                });
+                
+                return;
+            }
+            
+            // 創建地點按鈕的輔助函數
+            function createLocationButton(l, key, items) {
+                let div = document.createElement('div'); 
+                div.className = 'btn-loc';
+                div.innerText = l.n;
+                div.draggable = true;
+                div.dataset.uniqueId = l.uniqueId;
+                
+                // 拖動事件
+                div.ondragstart = (e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', l.uniqueId);
+                    div.classList.add('dragging');
+                };
+                div.ondragend = () => {
+                    div.classList.remove('dragging');
+                    document.querySelectorAll('.btn-loc').forEach(el => el.classList.remove('drag-over'));
+                };
+                div.ondragover = (e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    div.classList.add('drag-over');
+                };
+                div.ondragleave = () => {
+                    div.classList.remove('drag-over');
+                };
+                div.ondrop = (e) => {
+                    e.preventDefault();
+                    div.classList.remove('drag-over');
+                    const draggedId = e.dataTransfer.getData('text/plain');
+                    if(draggedId !== l.uniqueId) {
+                        // 找到被拖動的項目和目標項目在原始數組中的位置
+                        const draggedIndex = items.findIndex(item => 
+                            `${item.la}_${item.lo}_${item.n}` === draggedId
+                        );
+                        const targetIndex = items.findIndex(item => 
+                            `${item.la}_${item.lo}_${item.n}` === l.uniqueId
+                        );
+                        if(draggedIndex !== -1 && targetIndex !== -1) {
+                            // 移動項目
+                            const [moved] = items.splice(draggedIndex, 1);
+                            items.splice(targetIndex, 0, moved);
+                            localStorage.setItem(key, JSON.stringify(items));
+                            renderList();
+                        }
+                    }
+                };
+                div.onclick = (e) => {
+                    targetMarker.remove();
+                    map.flyTo([l.la, l.lo], 16);
+                    window.webkit.messageHandlers.bridge.postMessage({ act: 'tp', la: l.la, lo: l.lo });
+                };
+                return div;
+            }
+            
+            // 非最愛模式，使用原來的顯示方式（也支持拖動排序）
+            if(mode !== 'fav') {
+                // 非最愛模式，使用原來的顯示方式（也支持拖動排序）
+                items.forEach((l, idx) => {
+                    let div = document.createElement('div'); 
+                    div.className = 'btn-loc';
+                    div.innerText = l.n;
+                    div.draggable = true;
+                    div.dataset.index = idx;
+                    
+                    // 拖動事件
+                    div.ondragstart = (e) => {
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', idx.toString());
+                        div.classList.add('dragging');
+                    };
+                    div.ondragend = () => {
+                        div.classList.remove('dragging');
+                        document.querySelectorAll('.btn-loc').forEach(el => el.classList.remove('drag-over'));
+                    };
+                    div.ondragover = (e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        div.classList.add('drag-over');
+                    };
+                    div.ondragleave = () => {
+                        div.classList.remove('drag-over');
+                    };
+                    div.ondrop = (e) => {
+                        e.preventDefault();
+                        div.classList.remove('drag-over');
+                        const draggedIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                        if(draggedIdx !== idx) {
+                            const [moved] = items.splice(draggedIdx, 1);
+                            items.splice(idx, 0, moved);
+                            localStorage.setItem(key, JSON.stringify(items));
+                            renderList();
+                        }
+                    };
+                    div.onclick = (e) => {
+                        targetMarker.remove();
+                        map.flyTo([l.la, l.lo], 16);
+                        window.webkit.messageHandlers.bridge.postMessage({ act: 'tp', la: l.la, lo: l.lo });
+                    };
+                    list.appendChild(div);
+                });
+            }
+        }
+
+        async function searchLocation() {
+            let q = document.getElementById('search').value;
+            if(!q) return;
+            let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=1`);
+            let data = await res.json();
+            if(data[0]) {
+                pendingCoord={la:parseFloat(data[0].lat), lo:parseFloat(data[0].lon)};
+                map.flyTo([pendingCoord.la, pendingCoord.lo], 16);
+                targetMarker.setLatLng([pendingCoord.la, pendingCoord.lo]).addTo(map);
+            }
+        }
+
+        map.on('click', e => {
+            if(currentMode==='route') {
+                if(routePoints.length===0) routePoints.push([pikmin.getLatLng().lat, pikmin.getLatLng().lng]);
+                routePoints.push([e.latlng.lat, e.latlng.lng]);
+                pathLine.setLatLngs(routePoints);
+            } else {
+                pendingCoord={la:e.latlng.lat, lo:e.latlng.lng};
+                targetMarker.setLatLng(e.latlng).addTo(map);
+            }
+        });
+
+        function run() {
+            if(currentMode==='route' && routePoints.length > 1) {
+                window.webkit.messageHandlers.bridge.postMessage({ act: 'startRoute', pts: routePoints });
+            } else if(pendingCoord) {
+                window.webkit.messageHandlers.bridge.postMessage({ act: 'tp', la: pendingCoord.la, lo: pendingCoord.lo });
+                targetMarker.remove();
+            }
+        }
+
+        function stopAll() {
+            window.webkit.messageHandlers.bridge.postMessage({ act: 'stop' });
+            routePoints=[]; pathLine.setLatLngs([]); targetMarker.remove();
+        }
+
+        function syncLocation(la, lo) { pikmin.setLatLng([la, lo]); }
+        function reconnect() { window.webkit.messageHandlers.bridge.postMessage({ act: 'reconnect' }); }
+        function openModal() {
+            pendingCoord = { la: pikmin.getLatLng().lat, lo: pikmin.getLatLng().lng };
+            document.getElementById('apple-modal').style.display='flex';
+        }
+        function closeModal() { document.getElementById('apple-modal').style.display='none'; }
+        async function saveFav() {
+            let name = document.getElementById('fav-name').value;
+            if(name && pendingCoord) {
+                // 獲取地址信息
+                let category = '未知地區';
+                let addressInfo = null;
+                try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pendingCoord.la}&lon=${pendingCoord.lo}&addressdetails=1&accept-language=zh-TW,zh,en`);
+                    const data = await res.json();
+                    if(data && data.address) {
+                        addressInfo = data.address;
+                        category = getLocationCategory(data.address);
+                    }
+                } catch(err) {
+                    console.error('獲取地址信息失敗:', err);
+                }
+                
+                let favs = JSON.parse(localStorage.getItem('favLocs') || '[]');
+                // 只保存國家，不保存城市
+                // 優先使用名稱前綴，如果沒有則使用 API 結果
+                const nameCountry = getCountryFromName(name);
+                const apiCountry = getCountry(addressInfo || {}, name);
+                const country = nameCountry || apiCountry;
+                favs.push({n:name, la:pendingCoord.la, lo:pendingCoord.lo, country:country, category:country});
+                localStorage.setItem('favLocs', JSON.stringify(favs));
+                closeModal(); renderList();
+            }
+        }
+        function stopJiggle() { /* 已移除刪除/抖動模式 */ }
+        function setUI(s, t) { document.getElementById('st-text').innerText=t; document.getElementById('led').style.background=(s==='online')?'#30d158':'#ff3b30'; }
+        
+        // 頁面載入時檢查授權狀態
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+        });
+        
+        renderList();
+    </script>
+</body>
+</html>
+
+```

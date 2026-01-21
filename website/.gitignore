@@ -1,0 +1,6 @@
+.vercel
+.env*.local
+
+# 環境變數文件（包含敏感資料）
+.env.local
+.env

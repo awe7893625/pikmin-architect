@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>付款成功 - 摃菇 iOS 模擬器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            padding: 20px; 
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container { 
+            max-width: 600px; 
+            background: white; 
+            border-radius: 20px; 
+            padding: 40px; 
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); 
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 80px;
+            color: #34C759;
+            margin-bottom: 20px;
+        }
+        h1 { 
+            color: #333; 
+            margin-bottom: 20px; 
+        }
+        .license-box {
+            background: #f8f9fa;
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 30px 0;
+        }
+        .license-key {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+            font-family: 'Courier New', monospace;
+            word-break: break-all;
+            margin: 15px 0;
+        }
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+        .instructions {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: left;
+            border-radius: 5px;
+        }
+        .instructions h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        .instructions ol {
+            margin-left: 20px;
+            color: #856404;
+        }
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        .back-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .back-btn:hover {
+            background: #5a6268;
+        }
+        .copied {
+            color: #34C759;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1 data-i18n="successTitle">付款成功！</h1>
+        <p style="color: #666; margin-bottom: 30px;" data-i18n="successThanks">感謝您的購買</p>
+        
+        <div class="license-box">
+            <h3 style="margin-bottom: 15px; color: #333;" data-i18n="yourLicenseKey">您的授權碼</h3>
+            <div class="license-key" id="licenseKey" data-i18n="loading">載入中...</div>
+            <button class="copy-btn" onclick="copyLicenseKey()" data-i18n="copyLicense">複製授權碼</button>
+            <div class="copied" id="copied" data-i18n="copied">✅ 已複製到剪貼板</div>
+        </div>
+        
+        <div class="instructions">
+            <h3 data-i18n="howToUseLicense">如何使用授權碼：</h3>
+            <ol>
+                <li data-i18n="howToUseStep1">打開 App</li>
+                <li data-i18n="howToUseStep2">點擊右下角「⚙️」設定</li>
+                <li data-i18n="howToUseStep3">貼上授權碼</li>
+                <li data-i18n="howToUseStep4">點擊「啟用」</li>
+                <li data-i18n="howToUseStep5">完成後即可無限制使用</li>
+            </ol>
+        </div>
+
+        <div class="instructions" style="background:#f8f9fa; border-left-color:#667eea;">
+            <h3 style="color:#333;" data-i18n="importantNotes">重要說明（避免爭議）</h3>
+            <ol style="color:#333;">
+                <li data-i18n="noteBinding">一次性綁定：授權碼啟用後會綁定單一設備（deviceId）。</li>
+                <li data-i18n="noteFailClosed">Fail Closed：授權系統暫不可用時會顯示錯誤碼並鎖住需要授權功能。</li>
+                <li data-i18n="noteReinstall">換機/重灌：目前不提供自動轉移（TODO）。</li>
+            </ol>
+        </div>
+        
+        <button class="back-btn" onclick="window.location.href='/'" data-i18n="backHome">返回首頁</button>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const licenseKey = urlParams.get('licenseKey');
+        const orderId = urlParams.get('orderId');
+        const currentLang = urlParams.get('lang') || 'zh-TW';
+        let translations = {};
+
+        async function loadLanguage(lang) {
+            try {
+                const res = await fetch(`/api/locale/${lang}`);
+                translations = await res.json();
+            } catch (e) {
+                console.warn('loadLanguage failed:', e);
+                translations = {};
+            }
+        }
+
+        function applyTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const k = el.getAttribute('data-i18n');
+                if (k && translations[k]) el.textContent = translations[k];
+            });
+            const title = translations.successPageTitle || translations.successTitle;
+            if (title) document.title = `${title} - ${translations.appName || 'KongGoo'}`;
+        }
+        
+        async function pollOrderForLicense(orderId) {
+            const el = document.getElementById('licenseKey');
+            const maxMs = 60_000;
+            const intervalMs = 2000;
+            const started = Date.now();
+            el.textContent = translations.successWaitingLicense || '正在確認付款並產生授權碼...';
+
+            while (Date.now() - started < maxMs) {
+                try {
+                    const res = await fetch(`/api/payment/order/${encodeURIComponent(orderId)}`);
+                    const data = await res.json().catch(() => ({}));
+                    const o = data && data.order ? data.order : null;
+                    if (o && o.status === 'paid' && o.licenseKey) {
+                        el.textContent = o.licenseKey;
+                        return;
+                    }
+                } catch (_) {
+                    // ignore transient
+                }
+                await new Promise(r => setTimeout(r, intervalMs));
+            }
+            el.textContent = translations.successLicenseDelayed || '已收到付款完成，但授權碼尚在產生中，請稍後重新整理此頁面。';
+        }
+
+        (async () => {
+            await loadLanguage(currentLang);
+            applyTranslations();
+            const el = document.getElementById('licenseKey');
+            if (licenseKey) {
+                el.textContent = licenseKey;
+                return;
+            }
+            if (orderId) {
+                await pollOrderForLicense(orderId);
+                return;
+            }
+            el.textContent = translations.licenseNotFound || '未找到授權碼';
+        })();
+        
+        function copyLicenseKey() {
+            const licenseKeyText = document.getElementById('licenseKey').textContent;
+            
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(licenseKeyText).then(() => {
+                    showCopied();
+                });
+            } else {
+                // 備用方案
+                const textArea = document.createElement('textarea');
+                textArea.value = licenseKeyText;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                showCopied();
+            }
+        }
+        
+        function showCopied() {
+            const copied = document.getElementById('copied');
+            copied.style.display = 'block';
+            setTimeout(() => {
+                copied.style.display = 'none';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>

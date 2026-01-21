@@ -1,0 +1,49 @@
+# 網站啟動說明
+
+## 快速啟動
+
+1. 打開終端（Terminal）
+
+2. 進入 website 目錄：
+```bash
+cd "/Users/rain/Pikmin_Dev_Portable/PikminArchitect＿繼續開發版本/website"
+```
+
+3. 安裝依賴（如果還沒安裝）：
+```bash
+npm install
+```
+
+4. 創建 .env 檔案（設定金流 API 金鑰）：
+```bash
+cp .env.example .env
+# 然後編輯 .env 檔案，填入您的金流 API 金鑰
+```
+
+5. 啟動服務器：
+```bash
+npm start
+```
+
+6. 打開瀏覽器訪問：
+http://localhost:3001
+
+## 注意事項
+
+- 如果遇到 "command not found: cd" 錯誤，請確保路徑正確
+- 如果遇到 npm 錯誤，請確保已安裝 Node.js
+- 在設定金流 API 之前，網站可以正常運行，但付款功能無法使用
+
+## 測試模式
+
+在沒有設定金流 API 的情況下，您可以：
+1. 查看網站設計
+2. 測試授權碼驗證功能（使用測試授權碼）
+3. 查看所有頁面
+
+## 完整路徑
+
+如果上面的相對路徑不工作，請使用完整路徑：
+```bash
+cd "/Users/rain/Pikmin_Dev_Portable/PikminArchitect＿繼續開發版本/website"
+```

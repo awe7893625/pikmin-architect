@@ -1,0 +1,64 @@
+{
+  "name": "pikmin-architect",
+  "version": "1.0.0",
+  "description": "Pikmin Architect - GPS Location Simulator for Pikmin Bloom",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win --x64",
+    "dev": "electron . --dev",
+    "postinstall": "echo '請確保已安裝 Python 3.x 和 pymobiledevice3'"
+  },
+  "keywords": [
+    "pikmin",
+    "gps",
+    "location",
+    "simulator"
+  ],
+  "author": "Pikmin Architect",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "build": {
+    "appId": "com.pikmin.architect",
+    "productName": "Pikmin Architect",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "src/**/*",
+      "scripts/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/pymobiledevice3.exe",
+        "to": "bin/",
+        "filter": ["*.exe"]
+      }
+    ]
+  }
+}

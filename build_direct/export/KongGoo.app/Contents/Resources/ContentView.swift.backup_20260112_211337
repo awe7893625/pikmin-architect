@@ -1,0 +1,417 @@
+import SwiftUI
+import WebKit
+import Combine
+import Foundation
+#if os(macOS)
+import AppKit
+#endif
+
+final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler {
+    @Published var udid: String = ""
+    var webView: WKWebView?
+    private var timer: Timer?
+    private var currentLat: Double = 25.033
+    private var currentLon: Double = 121.565
+    private var currentAltitude: Double = 10.0  // 目前海拔高度（公尺）
+    private var routeQueue: [[Double]] = []
+    private var currentSpeed: Double = 15.0  // 目前速度 (km/h)
+    private var lastUpdateTime: Date = Date()
+    private var pathOffset: Double = 0.0  // 路徑搖擺偏移累積
+    private var altitudeOffset: Double = 0.0  // 海拔變化累積
+    
+// 原地踏步檢測
+    private var lastPositions: [(lat: Double, lon: Double, time: Date)] = []
+    private var stuckCheckTimer: Timer?
+    private var stuckCount: Int = 0
+    private let stuckThreshold: Int = 3  // 連續3次檢測到原地踏步才觸發
+
+    // 請根據環境修改 python3 路徑
+        for pointData in trackData {
+            guard let lat = pointData["lat"] as? Double,
+                  let lon = pointData["lon"] as? Double else { continue }
+            
+            let altitude = pointData["altitude"] as? Double ?? 15.0
+            let speed = pointData["speed"] as? Double ?? 16.0
+            let timeOffset = pointData["time_offset"] as? Double ?? 0.0
+            
+            var timestamp: Date? = nil
+            if let timestampStr = pointData["timestamp"] as? String {
+                let formatter = ISO8601DateFormatter()
+                timestamp = formatter.date(from: timestampStr)
+            }
+            
+                lat: lat,
+                lon: lon,
+                altitude: altitude,
+                speed: speed,
+                timeOffset: timeOffset,
+                timestamp: timestamp
+            ))
+        }
+        
+        DispatchQueue.main.async {
+            if let metadata = json["metadata"] as? [String: Any],
+               let totalPoints = metadata["total_points"] as? Int {
+                self.webView?.evaluateJavaScript("console.log('已自動載入預設軌跡：\(totalPoints) 個點')")
+            }
+        }
+    }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let dict = message.body as? [String: Any], let act = dict["act"] as? String else { return }
+        switch act {
+        case "reconnect": self.reconnect()
+        case "tp":
+            // 停止所有移動模式
+            self.stopTimerOnly()
+            self.stopStuckCheck()
+            // 執行瞬移
+            self.teleport(lat: dict["la"] as? Double ?? 0, lon: dict["lo"] as? Double ?? 0)
+        case "startRoute":
+            let pts = dict["pts"] as? [[Double]] ?? []
+            self.startCruise(points: pts, kmh: 18.0)
+            // 載入真實 GPS 軌跡數據
+            if let trackFile = dict["file"] as? String {
+            }
+        self.stopTimerOnly()
+        self.stopStuckCheck()
+        self.stuckCount = 0
+        self.lastPositions = []
+        
+        // 從當前位置開始，找到最接近的軌跡點作為參考方向
+        var minDistance = Double.infinity
+        var startIndex = 0
+        
+            let dLat = point.lat - self.currentLat
+            let dLon = point.lon - self.currentLon
+            let dist = sqrt(dLat * dLat + dLon * dLon)
+            if dist < minDistance {
+                minDistance = dist
+                startIndex = index
+            }
+        }
+        
+        
+        // 重要：保持當前位置不變，不移動到任何軌跡點
+        // 只更新速度和海拔作為參考
+            self.currentSpeed = startPoint.speed
+            self.currentAltitude = startPoint.altitude
+        }
+        
+        // 立即發送當前位置（確保從目前位置開始）
+        // 添加真實 GPS 誤差
+        let latFactor = cos(self.currentLat * .pi / 180.0)
+        let gpsErrorLat = Double.random(in: -0.000027...0.000027)  // ±3 公尺
+        let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
+        
+        self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
+        
+        // 記錄起始位置
+        self.recordPosition(lat: self.currentLat, lon: self.currentLon)
+        
+        // 開始播放（從下一個軌跡點開始，但保持當前位置作為起點）
+        
+        // 啟動原地踏步檢測
+        startStuckCheck()
+    }
+    
+    // 播放真實軌跡的下一步（優化版：固定間隔 0.5-1 秒）
+// 確保在主線程執行
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async {
+            }
+            return
+        }
+        
+        
+        // 計算到下一個點的時間間隔
+        let timeInterval = nextPoint.timeOffset - currentPoint.timeOffset
+        
+        // 優化：固定計時器間隔在 0.5-1 秒之間，確保頻繁的位置更新
+        // 如果原始間隔太長（> 1 秒），強制縮短到 0.5-1 秒之間
+        let actualInterval: Double
+        if timeInterval > 1.0 {
+            // 如果間隔太長，使用 0.5-1 秒的固定間隔
+            let baseInterval = 0.75
+            let variation = Double.random(in: -0.25...0.25)
+            actualInterval = max(0.5, min(1.0, baseInterval + variation))
+        } else {
+            // 否則使用原始間隔，但確保至少 0.5 秒
+            actualInterval = max(0.5, min(1.0, timeInterval))
+        }
+        
+        timer = Timer.scheduledTimer(withTimeInterval: actualInterval, repeats: false) { [weak self] _ in
+            guard let self = self else { return }
+            
+            // 移動到下一個軌跡點
+            
+                
+                // 計算從當前位置到目標點的距離和方向
+                let dLat = point.lat - self.currentLat
+                let dLon = point.lon - self.currentLon
+                let dist = sqrt(dLat * dLat + dLon * dLon)
+                
+                // 激進改進：降低距離閾值，確保更頻繁的位置更新
+                // 如果距離很近（< 5 公尺），直接移動到目標點
+                // 否則按照真實速度移動（模擬真實移動）
+                if dist < 0.000045 {  // 約 5 公尺（從 10 公尺降低）
+                    // 直接移動到目標點
+                    self.currentLat = point.lat
+                    self.currentLon = point.lon
+                } else {
+                    // 按照真實速度移動（使用極短間隔，確保頻繁更新）
+                    let latFactor = cos(self.currentLat * .pi / 180.0)
+                    let metersPerDegreeLat = 111000.0
+                    let metersPerDegreeLon = 111000.0 * latFactor
+                    
+                    // 計算移動距離（使用真實速度，但間隔已縮短到 0.4-1 秒）
+                    let speedMs = self.currentSpeed / 3.6  // 轉換為 m/s
+                    let moveMeters = speedMs * actualInterval
+                    
+                    // 轉換為度數
+                    let moveLat = moveMeters / metersPerDegreeLat
+                    let moveLon = moveMeters / metersPerDegreeLon
+                    
+                    // 計算方向
+                    let directionLat = dLat / dist
+                    let directionLon = dLon / dist
+                    
+                    // 計算這一步應該移動的距離（不超過目標點）
+                    let moveDist = sqrt(moveLat * moveLat + moveLon * moveLon)
+                    let moveRatio = min(1.0, dist / moveDist)
+                    
+                    // 移動位置
+                    self.currentLat += directionLat * moveLat * moveRatio
+                    self.currentLon += directionLon * moveLon * moveRatio
+                }
+                
+                // 更新速度和海拔（使用真實數據）
+                self.currentAltitude = point.altitude
+                self.currentSpeed = point.speed
+                
+                // 添加真實 GPS 誤差（±3 公尺）
+                let latFactor = cos(self.currentLat * .pi / 180.0)
+                let gpsErrorLat = Double.random(in: -0.000027...0.000027)  // ±3 公尺
+                let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
+                
+                // 發送位置更新（加上 GPS 誤差）
+                self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
+                
+                // 記錄位置用於檢測原地踏步
+                self.recordPosition(lat: self.currentLat, lon: self.currentLon)
+                
+            } else {
+                self.stopTimerOnly()
+                self.stopStuckCheck()
+            }
+        }
+    }
+    
+    // 記錄位置用於檢測原地踏步
+    private func recordPosition(lat: Double, lon: Double) {
+        let now = Date()
+        lastPositions.append((lat: lat, lon: lon, time: now))
+        
+        // 只保留最近 5 個位置
+        if lastPositions.count > 5 {
+            lastPositions.removeFirst()
+        }
+    }
+    
+    // 啟動原地踏步檢測（優化版：更頻繁的檢測）
+    private func startStuckCheck() {
+        stopStuckCheck()
+        // 優化：縮短檢測間隔到 5 秒，更早發現問題
+        // 確保在主線程執行
+        DispatchQueue.main.async {
+            self.stuckCheckTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+                self?.checkIfStuck()
+            }
+            // 將計時器添加到 RunLoop
+            if let timer = self.stuckCheckTimer {
+                RunLoop.current.add(timer, forMode: .common)
+            }
+        }
+    }
+    
+    // 停止原地踏步檢測
+    private func stopStuckCheck() {
+        stuckCheckTimer?.invalidate()
+        stuckCheckTimer = nil
+    }
+    
+    // 檢測是否原地踏步（優化版：更靈敏的檢測和可靠的重啟）
+    private func checkIfStuck() {
+        // 確保在主線程執行
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async {
+                self.checkIfStuck()
+            }
+            return
+        }
+        
+        // 支援多點移動和真實軌跡模式的檢測
+        
+        // 優化：降低檢測閾值，更早發現原地踏步（誤差 < 3 公尺）
+        let threshold = 0.000027  // 約 3 公尺（從 5 公尺降低）
+        var allSame = true
+        let firstPos = lastPositions[0]
+        
+        // 檢查最近 3 個位置是否都在同一個地方
+        for pos in lastPositions {
+            let dLat = abs(pos.lat - firstPos.lat)
+            let dLon = abs(pos.lon - firstPos.lon)
+            if dLat > threshold || dLon > threshold {
+                allSame = false
+                break
+            }
+        }
+        
+        if allSame {
+            stuckCount += 1
+            
+            // 優化：降低觸發閾值，更快觸發重啟（從 3 次降低到 2 次）
+            if stuckCount >= 2 {  // 從 stuckThreshold (3) 降低到 2
+                // 立即觸發自動重新啟動
+                } else {
+                    autoRestartRouteMode()
+                }
+                stuckCount = 0  // 重置計數
+            }
+        } else {
+            // 如果移動了，重置計數
+            if stuckCount > 0 {
+                stuckCount = 0
+            }
+        }
+    }
+    
+    // 多點移動模式的自動重啟
+    private func autoRestartRouteMode() {
+        guard !routeQueue.isEmpty else { return }
+        
+        print("🔄 自動重新啟動多點移動...")
+        
+        // 停止當前播放
+        self.stopTimerOnly()
+        
+        // 清除舊的位置記錄
+        self.lastPositions = []
+        
+        // 強制發送當前位置（確保位置更新）
+        DispatchQueue.global(qos: .userInteractive).async {
+            // 添加 GPS 誤差
+            let latFactor = cos(self.currentLat * .pi / 180.0)
+            let gpsErrorLat = Double.random(in: -0.000027...0.000027)
+            let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
+            
+            // 強制發送位置
+            self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
+            
+            // 等待一下確保位置已發送
+            Thread.sleep(forTimeInterval: 0.3)
+            
+            // 繼續移動
+            DispatchQueue.main.async {
+                self.scheduleRealisticStep()
+                print("✅ 已重新啟動多點移動")
+            }
+        }
+    }
+    
+    // 自動重新啟動真實軌跡（優化版：更可靠的重啟邏輯）
+// 確保在主線程執行
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async {
+            }
+            return
+        }
+        
+        // 停止當前播放
+        self.stopTimerOnly()
+        
+        // 清除舊的位置記錄
+        self.lastPositions = []
+        self.stuckCount = 0
+        
+        // 優化：強制發送當前位置，使用更大的隨機抖動確保位置變化
+        let latFactor = cos(self.currentLat * .pi / 180.0)
+        // 使用更大的 GPS 誤差，確保位置有明顯變化
+        let gpsErrorLat = Double.random(in: -0.000045...0.000045)  // ±5 公尺
+        let gpsErrorLon = Double.random(in: -0.000045...0.000045) / latFactor
+        
+        // 強制發送位置（確保在主線程執行）
+        self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
+        
+        // 優化：立即繼續播放，不等待
+        // 使用 DispatchQueue.main.asyncAfter 確保位置已發送後再繼續
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            }
+        }
+    }
+    
+    func resetEverything() {
+        stopTimerOnly()
+        stopStuckCheck()
+        self.routeQueue = []
+        self.pathOffset = 0.0
+        self.altitudeOffset = 0.0
+        self.currentSpeed = 15.0
+        self.stuckCount = 0
+        self.lastPositions = []
+        // 保持當前海拔和軌跡數據，不重置
+    }
+    private func stopTimerOnly() { timer?.invalidate(); timer = nil }
+
+    @discardableResult private func shell(_ command: String) -> String {
+        #if os(macOS)
+        let task = Process(), pipe = Pipe(); task.standardOutput = pipe; task.standardError = pipe
+        task.launchPath = "/bin/bash"; task.arguments = ["-c", command]; task.launch()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+        #else
+        // iOS 上不支援 Process，返回空字串
+        return ""
+        #endif
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var engine = LocationEngine()
+    var body: some View { 
+        AppleMapView(engine: engine)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+#if os(macOS)
+struct AppleMapView: NSViewRepresentable {
+    let engine: LocationEngine
+    func makeNSView(context: NSViewRepresentableContext<AppleMapView>) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(engine, name: "bridge")
+        let webView = WKWebView(frame: .zero, configuration: config)
+        engine.webView = webView
+        if let url = Bundle.main.url(forResource: "index", withExtension: "html") {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        }
+        return webView
+    }
+    func updateNSView(_ nsView: WKWebView, context: NSViewRepresentableContext<AppleMapView>) {}
+}
+#else
+struct AppleMapView: UIViewRepresentable {
+    let engine: LocationEngine
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.userContentController.add(engine, name: "bridge")
+        let webView = WKWebView(frame: .zero, configuration: config)
+        engine.webView = webView
+        if let url = Bundle.main.url(forResource: "index", withExtension: "html") {
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        }
+        return webView
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}
+#endif

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>購買授權 - 摃菇 iOS 模擬器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            padding: 20px; 
+        }
+        .container { 
+            max-width: 600px; 
+            margin: 0 auto; 
+            background: white; 
+            border-radius: 20px; 
+            padding: 40px; 
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3); 
+        }
+        h1 { 
+            text-align: center; 
+            color: #333; 
+            margin-bottom: 30px; 
+        }
+        .plan-card {
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .plan-card:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        .plan-card.selected {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+        .plan-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .plan-price {
+            font-size: 32px;
+            color: #667eea;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .plan-desc {
+            color: #666;
+            margin-bottom: 15px;
+        }
+        .recommended {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            display: inline-block;
+            margin-bottom: 10px;
+        }
+        .payment-btn {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .payment-btn:hover {
+            background: #5568d3;
+        }
+        .payment-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 data-i18n="paymentTitle">購買授權</h1>
+        
+        <div class="plan-card" data-plan="annual" onclick="selectPlan('annual')">
+            <span class="recommended" data-i18n="recommended">推薦</span>
+            <div class="plan-title" data-i18n="annualPlan">年費方案</div>
+            <div class="plan-price">NT$ 690</div>
+            <div class="plan-desc" data-i18n="oneYearLicense">一年授權，無限使用</div>
+        </div>
+        
+        <div class="plan-card" data-plan="lifetime" onclick="selectPlan('lifetime')">
+            <div class="plan-title" data-i18n="lifetimePlan">永久方案</div>
+            <div class="plan-price">NT$ 1,750</div>
+            <div class="plan-desc" data-i18n="permanentLicense">永久授權，終身使用</div>
+        </div>
+        
+        <button class="payment-btn" id="payBtn" onclick="processPayment()" disabled data-i18n="paySelectPlan">選擇方案後付款</button>
+        
+        <div class="loading" id="loading">
+            <p data-i18n="paymentProcessing">正在處理付款...</p>
+        </div>
+        
+        <div class="error" id="error"></div>
+
+        <hr style="margin:30px 0; border:none; border-top:1px solid #eee;">
+
+        <div style="color:#333; line-height:1.6;">
+            <h2 style="font-size:18px; margin-bottom:10px;" data-i18n="paymentReadBeforeBuy">購買前請先閱讀（重要）</h2>
+            <div style="margin-bottom:14px;">
+                <strong data-i18n="bindingRuleTitle">授權綁定規則</strong><br>
+                <span data-i18n="bindingRuleBody">授權碼為一次性使用，啟用後將綁定單一設備（deviceId）。目前政策：換機 / 重灌不提供自動轉移，如需協助請聯絡客服處理重置（TODO: 填客服信箱）。</span>
+            </div>
+            <div style="margin-bottom:14px;">
+                <strong data-i18n="failClosedTitle">離線/伺服器不可用行為（Fail Closed）</strong><br>
+                <span data-i18n="failClosedBody">當授權服務暫不可用時，App 會顯示原因並鎖住需要授權的功能，請稍後再試或重新檢查授權狀態。</span>
+            </div>
+            <div style="margin-bottom:14px;">
+                <strong data-i18n="windowsStatusTitle">Windows 版本狀態</strong><br>
+                <span data-i18n="windowsStatusBody">Windows 版目前：Beta / 功能可能不完整（請勿誤認與 macOS 同等支援）。本頁價格主要對應 macOS 版。</span>
+            </div>
+            <div style="margin-bottom:10px;">
+                <strong data-i18n="errorCodeTableTitle">錯誤碼對照表</strong>
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:14px;">
+                <tr>
+                    <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;" data-i18n="errorCodeCol">錯誤碼</th>
+                    <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;" data-i18n="errorMessageCol">說明</th>
+                </tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">KV_UNAVAILABLE</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="KV_UNAVAILABLE_msg">授權系統暫時不可用，請稍後再試</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">TRIAL_EXHAUSTED</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="TRIAL_EXHAUSTED_msg">試用已用完，請購買授權</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_NOT_FOUND</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_NOT_FOUND_msg">授權碼不存在</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_USED</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_USED_msg">授權碼已被其他設備使用</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_INVALID</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_INVALID_msg">授權碼失效</td></tr>
+            </table>
+            <div style="color:#999; font-size:12px; margin-top:8px;">English FAQ: TODO</div>
+        </div>
+    </div>
+
+    <script>
+        // i18n（由 App 透過 ?lang= 傳入；否則預設 zh-TW）
+        const params = new URLSearchParams(window.location.search);
+        const currentLang = params.get('lang') || 'zh-TW';
+        let translations = {};
+
+        async function loadLanguage(lang) {
+            try {
+                const res = await fetch(`/api/locale/${lang}`);
+                translations = await res.json();
+            } catch (e) {
+                console.warn('loadLanguage failed:', e);
+                translations = {};
+            }
+        }
+
+        function applyTranslations() {
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const k = el.getAttribute('data-i18n');
+                if (k && translations[k]) el.textContent = translations[k];
+            });
+            const title = translations.paymentPageTitle || translations.paymentTitle;
+            if (title) document.title = `${title} - ${translations.appName || 'KongGoo'}`;
+        }
+
+        let selectedPlan = null;
+        const urlParams = new URLSearchParams(window.location.search);
+        const planType = urlParams.get('planType');
+        
+        (async () => {
+            await loadLanguage(currentLang);
+            applyTranslations();
+            if (planType) selectPlan(planType);
+        })();
+        
+        function selectPlan(plan) {
+            selectedPlan = plan;
+            document.querySelectorAll('.plan-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            document.querySelector(`[data-plan="${plan}"]`).classList.add('selected');
+            document.getElementById('payBtn').disabled = false;
+            document.getElementById('payBtn').textContent = translations.paymentGoToPay || '前往付款';
+        }
+        
+        async function processPayment() {
+            if (!selectedPlan) {
+                document.getElementById('error').textContent = translations.paymentSelectPlanFirst || '請選擇一個方案';
+                return;
+            }
+            
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('error').textContent = '';
+            document.getElementById('payBtn').disabled = true;
+            
+            try {
+                // 創建訂單（不生成授權碼，等待付款成功）
+                const response = await fetch('/api/payment/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        planType: selectedPlan
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.paymentUrl) {
+                    // 跳轉到付款頁面（綠界或模擬付款）
+                    window.location.href = data.paymentUrl;
+                } else {
+                    // 如果沒有付款 URL，顯示錯誤
+                    document.getElementById('error').textContent = data.error || '付款處理失敗，請稍後再試';
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('payBtn').disabled = false;
+                }
+            } catch (error) {
+                document.getElementById('error').textContent = '網絡錯誤，請稍後再試';
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('payBtn').disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

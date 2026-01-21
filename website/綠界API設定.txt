@@ -1,0 +1,46 @@
+# 綠界科技 API 設定資訊
+
+## 從綠界後台取得的資訊
+
+商店代號（MerchantID）：3487294
+介接 HashKey：GeneRPCVs#TCB570
+介接 HashIV：0LYW9hnDtehDd2te
+商店名稱：MPOS...
+
+---
+
+## 在 Vercel 設定環境變數
+
+請在 Vercel 控制台 → Settings → Environment Variables 添加以下變數：
+
+### 必須設定的變數：
+
+ECPAY_MERCHANT_ID=3487294
+ECPAY_HASH_KEY=GeneRPCVs#TCB570
+ECPAY_HASH_IV=0LYW9hnDtehDd2te
+ECPAY_API_URL=https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5
+ECPAY_RETURN_URL=https://您的網站.vercel.app/api/payment/return
+ECPAY_ORDER_RESULT_URL=https://您的網站.vercel.app/payment/success
+
+### 其他設定：
+
+PORT=3001
+NODE_ENV=production
+
+---
+
+## 重要提醒
+
+1. 將「您的網站.vercel.app」替換為實際的 Vercel URL
+2. 設定完環境變數後，記得重新部署
+3. 如果使用測試環境，API_URL 改為：
+   https://payment-stage.ecpay.com.tw/Cashier/AioCheckOut/V5
+
+---
+
+## 測試
+
+使用測試卡號測試付款：
+- 卡號：4311-9522-2222-2222
+- 有效期限：任意未來日期
+- 安全碼：任意 3 碼

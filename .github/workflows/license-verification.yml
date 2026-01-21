@@ -1,0 +1,107 @@
+name: license-verification
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      VERIFY_BASE_URL: ${{ secrets.VERIFY_BASE_URL }}
+      VERIFY_ADMIN_KEY: ${{ secrets.VERIFY_ADMIN_KEY }}
+      TEST_DEVICE_ID: ${{ secrets.TEST_DEVICE_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Remote license verification (curl -i transcript)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${VERIFY_BASE_URL:-}" ]]; then
+            echo "Missing secret: VERIFY_BASE_URL"
+            exit 1
+          fi
+          if [[ -z "${VERIFY_ADMIN_KEY:-}" ]]; then
+            echo "Missing secret: VERIFY_ADMIN_KEY"
+            exit 1
+          fi
+          if [[ -z "${TEST_DEVICE_ID:-}" ]]; then
+            echo "Missing secret: TEST_DEVICE_ID"
+            exit 1
+          fi
+
+          TRANSCRIPT="verification_transcript.txt"
+          : > "$TRANSCRIPT"
+          exec > >(tee -a "$TRANSCRIPT") 2>&1
+
+          base="${VERIFY_BASE_URL%/}"
+
+          echo "\$ curl -i -sS \"$base/__debug/routes\" -H \"x-admin-key: <REDACTED>\""
+          routes_resp="$(curl -i -sS "$base/__debug/routes" -H "x-admin-key: $VERIFY_ADMIN_KEY")"
+          echo "$routes_resp"
+
+          # Extract JSON body (best-effort) and verify core routeIds exist
+          routes_json="$(printf "%s" "$routes_resp" | awk 'BEGIN{body=0} body{print} /^\\r?$/{body=1}')"
+          ROUTES_JSON="$routes_json" python3 - <<'PY'
+import json, os, sys
+data = json.loads(os.environ["ROUTES_JSON"])
+need = {
+  ("POST","/api/auth/check"): "auth_check_v2",
+  ("POST","/api/trial/consume"): "trial_consume_v2",
+  ("POST","/api/license/activate"): "license_activate_v2",
+}
+seen = {(r.get("method"), r.get("path")): r.get("routeId") for r in data}
+missing = []
+wrong = []
+for k, v in need.items():
+  if k not in seen:
+    missing.append(k)
+  elif seen[k] != v:
+    wrong.append((k, seen[k], v))
+if missing or wrong:
+  print("RouteId verification failed.")
+  print("missing:", missing)
+  print("wrong:", wrong)
+  sys.exit(1)
+print("RouteId verification ok.")
+PY
+
+          # Fail Closed sanity: auth check should not be 5xx in a healthy preview/prod
+          echo "\$ curl -i -sS -X POST \"$base/api/auth/check\" -H \"Content-Type: application/json\" -d '{\"deviceId\":\"'$TEST_DEVICE_ID'\"}'"
+          curl -i -sS -X POST "$base/api/auth/check" -H "Content-Type: application/json" -d "{\"deviceId\":\"$TEST_DEVICE_ID\"}"
+
+          # Issue a license (debug gate must be enabled in that environment)
+          echo "\$ curl -i -sS -X POST \"$base/__debug/license/issue\" -H \"x-admin-key: <REDACTED>\" -H \"Content-Type: application/json\" -d '{\"planType\":\"annual\",\"note\":\"ci\"}'"
+          issue_resp="$(curl -i -sS -X POST "$base/__debug/license/issue" -H "x-admin-key: $VERIFY_ADMIN_KEY" -H "Content-Type: application/json" -d '{"planType":"annual","note":"ci"}')"
+          echo "$issue_resp"
+          issue_json="$(printf "%s" "$issue_resp" | awk 'BEGIN{body=0} body{print} /^\\r?$/{body=1}')"
+          license_key="$(ISSUE_JSON="$issue_json" python3 - <<'PY'
+import json, os
+print(json.loads(os.environ["ISSUE_JSON"])["licenseKey"])
+PY
+          )"
+          echo "ISSUED_LICENSE_KEY=$license_key"
+
+          # Activate
+          echo "\$ curl -i -sS -X POST \"$base/api/license/activate\" -H \"Content-Type: application/json\" -d '{\"deviceId\":\"'$TEST_DEVICE_ID'\",\"licenseKey\":\"'$license_key'\"}'"
+          curl -i -sS -X POST "$base/api/license/activate" -H "Content-Type: application/json" -d "{\"deviceId\":\"$TEST_DEVICE_ID\",\"licenseKey\":\"$license_key\"}"
+
+          # Re-check: must be activated
+          echo "\$ curl -i -sS -X POST \"$base/api/auth/check\" -H \"Content-Type: application/json\" -d '{\"deviceId\":\"'$TEST_DEVICE_ID'\"}'"
+          curl -i -sS -X POST "$base/api/auth/check" -H "Content-Type: application/json" -d "{\"deviceId\":\"$TEST_DEVICE_ID\"}"
+
+          # Persistence sanity (no redeploy): second check after short wait
+          sleep 2
+          echo "\$ curl -i -sS -X POST \"$base/api/auth/check\" -H \"Content-Type: application/json\" -d '{\"deviceId\":\"'$TEST_DEVICE_ID'\"}'"
+          curl -i -sS -X POST "$base/api/auth/check" -H "Content-Type: application/json" -d "{\"deviceId\":\"$TEST_DEVICE_ID\"}"
+        env: {}
+
+      - name: Upload transcript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification_transcript
+          path: verification_transcript.txt
+
