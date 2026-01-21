@@ -68,5 +68,44 @@ while IFS= read -r dep; do
   fi
 done < <(otool -L "$IDEVICE_ID_BIN" | tail -n +2 | awk '{print $1}')
 
+echo "🔧 修正 idevice_id / dylib 的載入路徑（移除 Homebrew 絕對路徑）..."
+# idevice_id 位於 Resources/bin，依賴的 dylib 位於 Resources/lib
+# - idevice_id 使用 @executable_path/../lib/xxx.dylib
+# - dylib 彼此依賴使用 @loader_path/xxx.dylib
+fix_macho_deps() {
+  local target="$1"        # Mach-O 檔案
+  local mode="$2"          # bin 或 lib
+  local dep old base new
+
+  while IFS= read -r dep; do
+    old="$dep"
+    base="$(basename "$dep")"
+    # 只處理 Homebrew /usr/local 的絕對依賴
+    if [[ "$old" == /opt/homebrew/* || "$old" == /usr/local/* ]]; then
+      if [[ "$mode" == "bin" ]]; then
+        new="@executable_path/../lib/$base"
+      else
+        new="@loader_path/$base"
+      fi
+      if [[ -f "$LIB_DIR/$base" ]]; then
+        install_name_tool -change "$old" "$new" "$target" 2>/dev/null || true
+      fi
+    fi
+  done < <(otool -L "$target" | tail -n +2 | awk '{print $1}')
+}
+
+# 先修 dylib 本身（讓它們互相用相對路徑）
+if [[ -d "$LIB_DIR" ]]; then
+  while IFS= read -r -d '' dylib; do
+    base="$(basename "$dylib")"
+    # 設定 dylib 的 install id（避免殘留絕對路徑）
+    install_name_tool -id "@rpath/$base" "$dylib" 2>/dev/null || true
+    fix_macho_deps "$dylib" "lib"
+  done < <(find "$LIB_DIR" -type f -name "*.dylib" -print0)
+fi
+
+# 再修 idevice_id
+fix_macho_deps "$BIN_DIR/idevice_id" "bin"
+
 echo "✅ 已打包 Python + pymobiledevice3 + libimobiledevice 依賴"
 rm -rf "$TMP_DIR"
