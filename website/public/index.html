@@ -1387,7 +1387,8 @@
             const link = downloadLinks[platform];
             if (link) {
                 // 直接下載
-                window.location.href = link;
+                // 加版本參數避免 CDN/瀏覽器快取到舊檔
+                window.location.href = link + '?v=20260121_2151';
             } else {
                 alert(`即將提供 ${platform === 'mac' ? 'macOS' : 'Windows'} 版本下載連結\n\n目前可以聯繫客服獲取下載連結。`);
             }
