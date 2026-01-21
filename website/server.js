@@ -1488,16 +1488,32 @@ app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
     const filePath = path.join(__dirname, 'downloads', file);
     
+    // 檢查檔案是否存在
+    if (!fs.existsSync(filePath)) {
+        // 如果 downloads 目錄沒有，嘗試 public 目錄
+        const publicPath = path.join(__dirname, 'public', file);
+        if (fs.existsSync(publicPath)) {
+            return res.sendFile(publicPath);
+        }
+        return res.status(404).json({ error: '檔案不存在' });
+    }
+    
     // 設置正確的 Content-Type
     if (file.endsWith('.dmg')) {
         res.setHeader('Content-Type', 'application/x-apple-diskimage');
+    } else if (file.endsWith('.zip')) {
+        res.setHeader('Content-Type', 'application/zip');
     } else if (file.endsWith('.exe')) {
         res.setHeader('Content-Type', 'application/x-msdownload');
     }
     
-    // 防止瀏覽器添加 quarantine 屬性
+    // 防止 Safari 添加 quarantine 屬性的關鍵 headers
     res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    // 添加這些 headers 可以減少 Safari 添加 quarantine 的可能性
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     res.sendFile(filePath);
 });
