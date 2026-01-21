@@ -8,8 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/downloads/(.*)",
-      "dest": "/server.js"
+      "handle": "filesystem"
     },
     {
       "src": "/api/(.*)",
