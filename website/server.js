@@ -1483,53 +1483,62 @@ app.post('/api/admin/create-license', async (req, res) => {
     });
 });
 
-// 下載文件
+// 下載文件（直接從 public/downloads 提供，不轉址）
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // ✅ 生產環境推薦：不要把大型 DMG 放進 Git（Vercel 部署容易失敗/變成 LFS 指標檔）
-    // 改用物件儲存（例如 Vercel Blob / S3 / R2）並在這裡做 302 轉址
-    // 在 Vercel 專案環境變數設定：
-    // - MAC_DMG_URL = https://<你的檔案儲存>/ios-location-simulator-mac.dmg
-    // 這樣一般使用者點下載就會直接拿到完整 DMG，不會再出現 134 bytes / 已損毀。
-    if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
-        return res.redirect(302, process.env.MAC_DMG_URL);
+    // 優先從 public/downloads 提供（一般使用者直接下載，不跳轉到 GitHub）
+    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
+    if (fs.existsSync(publicDownloadsPath)) {
+        // 設置正確的 Content-Type
+        if (file.endsWith('.dmg')) {
+            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        } else if (file.endsWith('.zip')) {
+            res.setHeader('Content-Type', 'application/zip');
+        } else if (file.endsWith('.exe')) {
+            res.setHeader('Content-Type', 'application/x-msdownload');
+        }
+        
+        // 防止 Safari 添加 quarantine 屬性的關鍵 headers
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
+        res.setHeader('Pragma', 'public');
+        
+        return res.sendFile(publicDownloadsPath);
     }
 
+    // 備用：從 downloads 目錄提供
     const filePath = path.join(__dirname, 'downloads', file);
-    
-    // 檢查檔案是否存在
-    if (!fs.existsSync(filePath)) {
-        // 如果 downloads 目錄沒有，嘗試 public/downloads 與 public 根目錄
-        const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
-        if (fs.existsSync(publicDownloadsPath)) {
-            return res.sendFile(publicDownloadsPath);
+    if (fs.existsSync(filePath)) {
+        // 設置正確的 Content-Type
+        if (file.endsWith('.dmg')) {
+            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        } else if (file.endsWith('.zip')) {
+            res.setHeader('Content-Type', 'application/zip');
+        } else if (file.endsWith('.exe')) {
+            res.setHeader('Content-Type', 'application/x-msdownload');
         }
-        const publicPath = path.join(__dirname, 'public', file);
-        if (fs.existsSync(publicPath)) {
-            return res.sendFile(publicPath);
-        }
-        return res.status(404).json({ error: '檔案不存在' });
+        
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Pragma', 'public');
+        
+        return res.sendFile(filePath);
     }
     
-    // 設置正確的 Content-Type
-    if (file.endsWith('.dmg')) {
-        res.setHeader('Content-Type', 'application/x-apple-diskimage');
-    } else if (file.endsWith('.zip')) {
-        res.setHeader('Content-Type', 'application/zip');
-    } else if (file.endsWith('.exe')) {
-        res.setHeader('Content-Type', 'application/x-msdownload');
+    // 最後嘗試 public 根目錄
+    const publicPath = path.join(__dirname, 'public', file);
+    if (fs.existsSync(publicPath)) {
+        if (file.endsWith('.dmg')) {
+            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        }
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        return res.sendFile(publicPath);
     }
     
-    // 防止 Safari 添加 quarantine 屬性的關鍵 headers
-    res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    // 添加這些 headers 可以減少 Safari 添加 quarantine 的可能性
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    
-    res.sendFile(filePath);
+    return res.status(404).json({ error: '檔案不存在' });
 });
 
 // ========================
