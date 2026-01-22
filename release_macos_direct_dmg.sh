@@ -127,23 +127,29 @@ if [[ -d "$APP_PATH/Contents/Resources/python" ]]; then
 fi
 
 echo "🔏 重新簽署（包含內嵌依賴）..."
-if [[ -d "$APP_PATH/Contents/Resources/lib" ]]; then
-  find "$APP_PATH/Contents/Resources/lib" -type f -name "*.dylib" -print0 | \
-    xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
-fi
-if [[ -d "$APP_PATH/Contents/Resources/bin" ]]; then
-  find "$APP_PATH/Contents/Resources/bin" -type f -perm -111 -print0 | \
-    xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
-fi
-if [[ -d "$APP_PATH/Contents/Resources/python" ]]; then
-  while IFS= read -r -d '' f; do
-    if file "$f" | grep -q "Mach-O"; then
-      codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$f"
-    fi
-  done < <(find "$APP_PATH/Contents/Resources/python/bin" -type f -perm -111 -print0)
-  find "$APP_PATH/Contents/Resources/python" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | \
-    xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
-fi
+for LIB_DIR in "$APP_PATH/Contents/Resources/lib" "$APP_PATH/Contents/Resources/lib_arm64" "$APP_PATH/Contents/Resources/lib_x86_64"; do
+  if [[ -d "$LIB_DIR" ]]; then
+    find "$LIB_DIR" -type f -name "*.dylib" -print0 | \
+      xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
+  fi
+done
+for BIN_DIR in "$APP_PATH/Contents/Resources/bin" "$APP_PATH/Contents/Resources/bin_arm64" "$APP_PATH/Contents/Resources/bin_x86_64"; do
+  if [[ -d "$BIN_DIR" ]]; then
+    find "$BIN_DIR" -type f -perm -111 -print0 | \
+      xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
+  fi
+done
+for PY_DIR in "$APP_PATH/Contents/Resources/python" "$APP_PATH/Contents/Resources/python_arm64" "$APP_PATH/Contents/Resources/python_x86_64"; do
+  if [[ -d "$PY_DIR" ]]; then
+    while IFS= read -r -d '' f; do
+      if file "$f" | grep -q "Mach-O"; then
+        codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$f"
+      fi
+    done < <(find "$PY_DIR/bin" -type f -perm -111 -print0)
+    find "$PY_DIR" -type f \( -name "*.so" -o -name "*.dylib" \) -print0 | \
+      xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "{}"
+  fi
+done
 codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" --deep "$APP_PATH"
 
 echo "🔍 codesign 驗證..."
