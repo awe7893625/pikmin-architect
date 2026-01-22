@@ -1564,10 +1564,11 @@ app.get('/downloads/:file', (req, res) => {
         return;
     }
     
-    // 如果沒有環境變數，但請求的是 DMG 檔案，重定向到 GitHub Release
+    // 如果請求的是 DMG 檔案，直接重定向到 GitHub Release（最新版本）
     if (file === 'ios-location-simulator-mac.dmg') {
-        console.log(`📥 [下載] 沒有 MAC_DMG_URL 環境變數，重定向到 GitHub Release`);
-        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
+        console.log(`📥 [下載] 重定向到 GitHub Release 最新版本`);
+        // 重定向到最新 Release 的 DMG 下載連結
+        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg');
     }
 
     // 備用：從 downloads 目錄提供
