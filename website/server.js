@@ -1487,32 +1487,73 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // 從 public/downloads 直接提供（簡單直接，讓 Vercel filesystem 處理）
+    // 優先：從 public/downloads 直接提供（簡單直接，讓 Vercel filesystem 處理）
     const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
     if (fs.existsSync(publicDownloadsPath)) {
         // 檢查檔案大小，避免提供 Git LFS 指標檔（通常 < 200 bytes）
         const stats = fs.statSync(publicDownloadsPath);
         if (stats.size < 200) {
-            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔`);
-            return res.status(404).json({ error: '檔案不存在', code: 'FILE_NOT_FOUND' });
+            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔，嘗試代理下載`);
+            // 繼續執行，嘗試代理下載
+        } else {
+            // 設置正確的 Content-Type
+            if (file.endsWith('.dmg')) {
+                res.setHeader('Content-Type', 'application/x-apple-diskimage');
+            } else if (file.endsWith('.zip')) {
+                res.setHeader('Content-Type', 'application/zip');
+            } else if (file.endsWith('.exe')) {
+                res.setHeader('Content-Type', 'application/x-msdownload');
+            }
+            
+            // 防止 Safari 添加 quarantine 屬性的關鍵 headers
+            res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
+            res.setHeader('Pragma', 'public');
+            
+            return res.sendFile(publicDownloadsPath);
         }
+    }
+
+    // 備用：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
+    if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
+        const downloadUrl = process.env.MAC_DMG_URL;
+        console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
-        // 設置正確的 Content-Type
-        if (file.endsWith('.dmg')) {
-            res.setHeader('Content-Type', 'application/x-apple-diskimage');
-        } else if (file.endsWith('.zip')) {
-            res.setHeader('Content-Type', 'application/zip');
-        } else if (file.endsWith('.exe')) {
-            res.setHeader('Content-Type', 'application/x-msdownload');
-        }
-        
-        // 防止 Safari 添加 quarantine 屬性的關鍵 headers
-        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        // 設置正確的 headers
+        res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
-        res.setHeader('Pragma', 'public');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         
-        return res.sendFile(publicDownloadsPath);
+        // 使用 stream 代理下載，不讓使用者看到原始 URL
+        const https = require('https');
+        const http = require('http');
+        const url = require('url');
+        const parsedUrl = url.parse(downloadUrl);
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        
+        const proxyReq = client.get(parsedUrl, (proxyRes) => {
+            if (proxyRes.statusCode !== 200) {
+                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}`);
+                return res.status(proxyRes.statusCode).json({ error: '下載失敗', code: 'DOWNLOAD_FAILED' });
+            }
+            
+            res.statusCode = proxyRes.statusCode;
+            Object.keys(proxyRes.headers).forEach(key => {
+                if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                    res.setHeader(key, proxyRes.headers[key]);
+                }
+            });
+            proxyRes.pipe(res);
+        });
+        
+        proxyReq.on('error', (err) => {
+            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
+            res.status(500).json({ error: '下載失敗', code: 'DOWNLOAD_PROXY_ERROR' });
+        });
+        
+        return;
     }
 
     // 備用：從 downloads 目錄提供
