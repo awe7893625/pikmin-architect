@@ -32,22 +32,46 @@ VENV_DIR_ARM="$TMP_DIR/venv_arm64"
 VENV_DIR_X86="$TMP_DIR/venv_x86_64"
 
 # arm64 venv
+# 強制使用 --copies 避免符號連結（公證要求）
 VENV_ARGS_ARM="--copies"
-if [[ "$PYTHON_SRC_ARM" == "/usr/bin/python3" ]]; then
-  # /usr/bin/python3 不支援 --copies，改用 symlink（仍可使用 venv 套件）
-  VENV_ARGS_ARM=""
-fi
-arch -arm64 "$PYTHON_SRC_ARM" -m venv $VENV_ARGS_ARM "$VENV_DIR_ARM"
+arch -arm64 "$PYTHON_SRC_ARM" -m venv $VENV_ARGS_ARM "$VENV_DIR_ARM" 2>&1 || {
+  # 如果 --copies 失敗，創建後手動替換符號連結
+  echo "⚠️  --copies 失敗，將手動替換符號連結..."
+  arch -arm64 "$PYTHON_SRC_ARM" -m venv "$VENV_DIR_ARM"
+  # 替換 python3 符號連結為實際檔案
+  if [[ -L "$VENV_DIR_ARM/bin/python3" ]]; then
+    PYTHON_TARGET=$(readlink "$VENV_DIR_ARM/bin/python3")
+    if [[ -f "$PYTHON_TARGET" ]]; then
+      rm "$VENV_DIR_ARM/bin/python3"
+      cp "$PYTHON_TARGET" "$VENV_DIR_ARM/bin/python3"
+      chmod +x "$VENV_DIR_ARM/bin/python3"
+    fi
+  fi
+}
 arch -arm64 "$VENV_DIR_ARM/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
 arch -arm64 "$VENV_DIR_ARM/bin/python" -m pip install --upgrade pip >/dev/null
 PIP_NO_COMPILE=1 arch -arm64 "$VENV_DIR_ARM/bin/python" -m pip install --no-compile pymobiledevice3 >/dev/null
 
 # x86_64 venv
+# 強制使用 --copies 避免符號連結（公證要求）
 VENV_ARGS_X86="--copies"
-if [[ "$PYTHON_SRC_X86" == "/usr/bin/python3" ]]; then
-  VENV_ARGS_X86=""
-fi
-arch -x86_64 "$PYTHON_SRC_X86" -m venv $VENV_ARGS_X86 "$VENV_DIR_X86"
+arch -x86_64 "$PYTHON_SRC_X86" -m venv $VENV_ARGS_X86 "$VENV_DIR_X86" 2>&1 || {
+  # 如果 --copies 失敗，創建後手動替換符號連結
+  echo "⚠️  --copies 失敗，將手動替換符號連結..."
+  arch -x86_64 "$PYTHON_SRC_X86" -m venv "$VENV_DIR_X86"
+  # 替換 python3 符號連結為實際檔案
+  if [[ -L "$VENV_DIR_X86/bin/python3" ]]; then
+    PYTHON_TARGET=$(readlink "$VENV_DIR_X86/bin/python3")
+    if [[ -f "$PYTHON_TARGET" ]]; then
+      rm "$VENV_DIR_X86/bin/python3"
+      cp "$PYTHON_TARGET" "$VENV_DIR_X86/bin/python3"
+      chmod +x "$VENV_DIR_X86/bin/python3"
+    fi
+  fi
+}
+arch -x86_64 "$VENV_DIR_X86/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+arch -x86_64 "$VENV_DIR_X86/bin/python" -m pip install --upgrade pip >/dev/null
+PIP_NO_COMPILE=1 arch -x86_64 "$VENV_DIR_X86/bin/python" -m pip install --no-compile pymobiledevice3 >/dev/null
 arch -x86_64 "$VENV_DIR_X86/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
 arch -x86_64 "$VENV_DIR_X86/bin/python" -m pip install --upgrade pip >/dev/null
 PIP_NO_COMPILE=1 arch -x86_64 "$VENV_DIR_X86/bin/python" -m pip install --no-compile pymobiledevice3 >/dev/null
@@ -57,6 +81,31 @@ rm -rf "$PY_DIR_ARM" "$PY_DIR_X86"
 mkdir -p "$RES_DIR"
 cp -R "$VENV_DIR_ARM" "$PY_DIR_ARM"
 cp -R "$VENV_DIR_X86" "$PY_DIR_X86"
+
+# 確保所有符號連結都被替換為實際檔案（公證要求）
+echo "🔗 檢查並修復符號連結..."
+fix_symlinks() {
+  local dir="$1"
+  find "$dir" -type l | while read -r symlink; do
+    local target=$(readlink "$symlink")
+    # 如果是絕對路徑或指向 bundle 外部，替換為實際檔案
+    if [[ "$target" == /* ]]; then
+      if [[ -f "$target" ]]; then
+        echo "  替換符號連結: $symlink -> $target"
+        rm "$symlink"
+        cp "$target" "$symlink"
+        chmod +x "$symlink" 2>/dev/null || true
+      elif [[ -d "$target" ]]; then
+        echo "  警告: 符號連結指向目錄，跳過: $symlink -> $target"
+      else
+        echo "  警告: 符號連結目標不存在，移除: $symlink -> $target"
+        rm "$symlink"
+      fi
+    fi
+  done
+}
+fix_symlinks "$PY_DIR_ARM"
+fix_symlinks "$PY_DIR_X86"
 
 echo "🔌 綁定 libimobiledevice / idevice_id（arm64）..."
 IDEVICE_ID_BIN_ARM="${IDEVICE_ID_BIN_ARM:-$(command -v idevice_id || true)}"
