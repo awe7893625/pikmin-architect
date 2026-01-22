@@ -1,3 +1,4 @@
 # 不要用 Git LFS 追蹤 DMG，否則部署平台可能只拿到 LFS 指標檔（導致下載後顯示「已損毀」）
 # website/downloads/*.dmg filter=lfs diff=lfs merge=lfs -text
 # website/public/*.dmg filter=lfs diff=lfs merge=lfs -text
+*.dmg filter=lfs diff=lfs merge=lfs -text
