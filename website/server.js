@@ -1487,6 +1487,12 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
+    // 如果是 DMG 檔案，直接重定向到 GitHub Release（最優先，確保可用）
+    if (file === 'ios-location-simulator-mac.dmg') {
+        console.log(`📥 [下載] 重定向到 GitHub Release 最新版本`);
+        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg');
+    }
+
     // 優先：從 public/downloads 直接提供（簡單直接，讓 Vercel filesystem 處理）
     const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
     if (fs.existsSync(publicDownloadsPath)) {
