@@ -1538,9 +1538,38 @@ app.get('/downloads/:file', (req, res) => {
         
         const proxyReq = client.get(parsedUrl, (proxyRes) => {
             if (proxyRes.statusCode !== 200) {
-                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，直接重定向到 GitHub Release`);
-                // 如果 GitHub 回傳 404 或其他錯誤，直接重定向到 GitHub Release 頁面
-                return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
+                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
+                // 如果 GitHub 回傳 404，嘗試使用備用連結
+                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg';
+                console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
+                const fallbackParsed = url.parse(fallbackUrl);
+                const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
+                const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
+                    if (fallbackRes.statusCode === 200) {
+                        res.statusCode = fallbackRes.statusCode;
+                        Object.keys(fallbackRes.headers).forEach(key => {
+                            if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                                res.setHeader(key, fallbackRes.headers[key]);
+                            }
+                        });
+                        fallbackRes.pipe(res);
+                    } else {
+                        // 如果備用連結也失敗，返回錯誤而不是重定向到頁面
+                        return res.status(503).json({ 
+                            error: '下載暫時不可用', 
+                            message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
+                            code: 'DOWNLOAD_UNAVAILABLE'
+                        });
+                    }
+                });
+                fallbackReq.on('error', () => {
+                    return res.status(503).json({ 
+                        error: '下載暫時不可用', 
+                        message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
+                        code: 'DOWNLOAD_UNAVAILABLE'
+                    });
+                });
+                return;
             }
             
             res.statusCode = proxyRes.statusCode;
@@ -1553,15 +1582,23 @@ app.get('/downloads/:file', (req, res) => {
         });
         
         proxyReq.on('error', (err) => {
-            console.error(`❌ [下載] 代理下載失敗: ${err.message}，重定向到 GitHub Release`);
-            // 如果代理失敗，重定向到 GitHub Release 頁面
-            return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
+            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
+            // 返回錯誤而不是重定向
+            return res.status(503).json({ 
+                error: '下載失敗', 
+                message: '無法連接到下載伺服器，請稍候再試',
+                code: 'DOWNLOAD_PROXY_ERROR'
+            });
         });
         
-        proxyReq.setTimeout(10000, () => {
+        proxyReq.setTimeout(15000, () => {
             proxyReq.destroy();
-            console.log(`⚠️ [下載] 代理下載超時，重定向到 GitHub Release`);
-            return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
+            console.log(`⚠️ [下載] 代理下載超時`);
+            return res.status(504).json({ 
+                error: '下載超時', 
+                message: '下載請求超時，請稍候再試',
+                code: 'DOWNLOAD_TIMEOUT'
+            });
         });
         
         return;
