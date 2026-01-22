@@ -1527,6 +1527,19 @@ app.get('/downloads/:file', (req, res) => {
         const client = parsedUrl.protocol === 'https:' ? https : http;
         
         const proxyReq = client.get(parsedUrl, (proxyRes) => {
+            // 如果 GitHub 回傳 404 或其他錯誤，回退到本地檔案
+            if (proxyRes.statusCode !== 200) {
+                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，回退到本地檔案`);
+                const fallbackPath = path.join(__dirname, 'public', 'downloads', file);
+                if (fs.existsSync(fallbackPath)) {
+                    res.setHeader('Content-Type', 'application/x-apple-diskimage');
+                    res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+                    res.setHeader('X-Content-Type-Options', 'nosniff');
+                    return res.sendFile(fallbackPath);
+                }
+                return res.status(proxyRes.statusCode).json({ error: '下載失敗', code: 'DOWNLOAD_FAILED' });
+            }
+            
             res.statusCode = proxyRes.statusCode;
             Object.keys(proxyRes.headers).forEach(key => {
                 if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
