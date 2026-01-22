@@ -1535,8 +1535,9 @@ app.get('/downloads/:file', (req, res) => {
         
         const proxyReq = client.get(parsedUrl, (proxyRes) => {
             if (proxyRes.statusCode !== 200) {
-                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}`);
-                return res.status(proxyRes.statusCode).json({ error: '下載失敗', code: 'DOWNLOAD_FAILED' });
+                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，直接重定向到 GitHub Release`);
+                // 如果 GitHub 回傳 404 或其他錯誤，直接重定向到 GitHub Release 頁面
+                return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
             }
             
             res.statusCode = proxyRes.statusCode;
@@ -1549,11 +1550,24 @@ app.get('/downloads/:file', (req, res) => {
         });
         
         proxyReq.on('error', (err) => {
-            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
-            res.status(500).json({ error: '下載失敗', code: 'DOWNLOAD_PROXY_ERROR' });
+            console.error(`❌ [下載] 代理下載失敗: ${err.message}，重定向到 GitHub Release`);
+            // 如果代理失敗，重定向到 GitHub Release 頁面
+            return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
+        });
+        
+        proxyReq.setTimeout(10000, () => {
+            proxyReq.destroy();
+            console.log(`⚠️ [下載] 代理下載超時，重定向到 GitHub Release`);
+            return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
         });
         
         return;
+    }
+    
+    // 如果沒有環境變數，但請求的是 DMG 檔案，重定向到 GitHub Release
+    if (file === 'ios-location-simulator-mac.dmg') {
+        console.log(`📥 [下載] 沒有 MAC_DMG_URL 環境變數，重定向到 GitHub Release`);
+        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/latest');
     }
 
     // 備用：從 downloads 目錄提供
