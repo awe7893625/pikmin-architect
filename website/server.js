@@ -1515,7 +1515,8 @@ app.get('/downloads/:file', (req, res) => {
         }
     }
 
-    // 備用：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
+    // 優先：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
+    // 因為 Vercel 部署時可能拿到 LFS 指標檔，所以優先使用代理下載
     if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
         const downloadUrl = process.env.MAC_DMG_URL;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
