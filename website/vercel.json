@@ -8,6 +8,14 @@
   ],
   "routes": [
     {
+      "src": "/downloads/(.*)",
+      "dest": "/public/downloads/$1",
+      "headers": {
+        "Content-Type": "application/x-apple-diskimage",
+        "Content-Disposition": "attachment"
+      }
+    },
+    {
       "handle": "filesystem"
     },
     {
