@@ -1487,6 +1487,42 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
+    // 如果檔案是 DMG 且環境變數有設定，直接代理下載（不讓使用者看到 GitHub）
+    if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
+        const downloadUrl = process.env.MAC_DMG_URL;
+        console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
+        
+        // 設置正確的 headers
+        res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        
+        // 使用 stream 代理下載，不讓使用者看到原始 URL
+        const https = require('https');
+        const http = require('http');
+        const url = require('url');
+        const parsedUrl = url.parse(downloadUrl);
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        
+        const proxyReq = client.get(parsedUrl, (proxyRes) => {
+            res.statusCode = proxyRes.statusCode;
+            Object.keys(proxyRes.headers).forEach(key => {
+                if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                    res.setHeader(key, proxyRes.headers[key]);
+                }
+            });
+            proxyRes.pipe(res);
+        });
+        
+        proxyReq.on('error', (err) => {
+            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
+            res.status(500).json({ error: '下載失敗', code: 'DOWNLOAD_PROXY_ERROR' });
+        });
+        
+        return;
+    }
+
     // 優先從 public/downloads 提供（一般使用者直接下載，不跳轉到 GitHub）
     const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
     if (fs.existsSync(publicDownloadsPath)) {
