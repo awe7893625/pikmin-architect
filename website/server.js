@@ -1538,7 +1538,27 @@ app.get('/downloads/:file', (req, res) => {
         
         proxyReq.on('error', (err) => {
             console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
+            // 如果代理失敗，嘗試從本地檔案提供
+            const fallbackPath = path.join(__dirname, 'public', 'downloads', file);
+            if (fs.existsSync(fallbackPath)) {
+                console.log(`📦 [下載] 改用本地檔案: ${fallbackPath}`);
+                res.setHeader('Content-Type', 'application/x-apple-diskimage');
+                res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                return res.sendFile(fallbackPath);
+            }
             res.status(500).json({ error: '下載失敗', code: 'DOWNLOAD_PROXY_ERROR' });
+        });
+        
+        proxyReq.setTimeout(30000, () => {
+            proxyReq.destroy();
+            const fallbackPath = path.join(__dirname, 'public', 'downloads', file);
+            if (fs.existsSync(fallbackPath)) {
+                res.setHeader('Content-Type', 'application/x-apple-diskimage');
+                res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+                return res.sendFile(fallbackPath);
+            }
+            res.status(504).json({ error: '下載超時', code: 'DOWNLOAD_TIMEOUT' });
         });
         
         return;
