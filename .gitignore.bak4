@@ -1,0 +1,80 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# 環境變數
+.env
+.env.local
+.env.*.local
+
+# 編譯輸出
+dist/
+build/
+build_xcode/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# 備份文件
+*.backup
+*.bak
+*.swift.backup
+
+# 臨時文件
+*.tmp
+*.temp
+
+# 網站相關
+website/node_modules/
+server/node_modules/
+
+# 敏感資訊
+*.pem
+*.key
+*.cert
+AuthKey_*.p8
+.notarytool-credentials*
+.notarytool*
+
+# 用戶個人最愛地點備份檔案（不應上傳到 Git）
+PikminArchitect/favorite_locations_backup.json
+**/favorite_locations_backup.json
+PikminArchitect/favorite_locations_backup.json.*
+**/favorite_locations_backup.json.*
+
+# 包含實際 API 金鑰的文件（不要上傳到 Git）
+website/*環境變數*.md
+website/*API設定*.txt
+website/*Vercel*.md
+website/讓我幫您*.md
+website/設定Vercel*.md
+website/完成部署*.md
+website/立即部署*.md
+website/部署步驟.md
+website/金流串接說明.md
+# DMG 不上傳 Git（改用外部連結 + MAC_DMG_URL）
+website/public/downloads/*.dmg
+.vercel
+.env*.local
