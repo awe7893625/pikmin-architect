@@ -42,18 +42,39 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private let preferredUDIDKey = "preferredUDID"
     private var preferredUDID: String = ""
 
-    // 免安裝依賴：優先使用 App 內建的 Python/工具，找不到才回退到系統
+    // 免安裝依賴：依架構選擇 App 內建的 Python/工具，找不到才回退到系統
+    private var currentMachineArch: String {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var machine = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.machine", &machine, &size, nil, 0)
+        return String(cString: machine)
+    }
+    private var isAppleSilicon: Bool {
+        currentMachineArch.contains("arm64")
+    }
     private var bundleResourcesPath: String {
         Bundle.main.bundleURL.appendingPathComponent("Contents/Resources").path
     }
+    private var bundledPythonBasePath: String {
+        isAppleSilicon ? "\(bundleResourcesPath)/python_arm64" : "\(bundleResourcesPath)/python_x86_64"
+    }
     private var bundledPythonPath: String {
-        "\(bundleResourcesPath)/python/bin/python3"
+        let preferred = "\(bundledPythonBasePath)/bin/python3"
+        if FileManager.default.fileExists(atPath: preferred) { return preferred }
+        let legacy = "\(bundleResourcesPath)/python/bin/python3"
+        if FileManager.default.fileExists(atPath: legacy) { return legacy }
+        return preferred
     }
     private var bundledBinPath: String {
-        "\(bundleResourcesPath)/bin"
+        let preferred = isAppleSilicon ? "\(bundleResourcesPath)/bin_arm64" : "\(bundleResourcesPath)/bin_x86_64"
+        if FileManager.default.fileExists(atPath: preferred) { return preferred }
+        return "\(bundleResourcesPath)/bin"
     }
     private var bundledLibPath: String {
-        "\(bundleResourcesPath)/lib"
+        let preferred = isAppleSilicon ? "\(bundleResourcesPath)/lib_arm64" : "\(bundleResourcesPath)/lib_x86_64"
+        if FileManager.default.fileExists(atPath: preferred) { return preferred }
+        return "\(bundleResourcesPath)/lib"
     }
     private var pythonPath: String {
         if FileManager.default.fileExists(atPath: bundledPythonPath) {

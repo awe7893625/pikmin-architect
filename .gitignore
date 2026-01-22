@@ -74,4 +74,5 @@ website/完成部署*.md
 website/立即部署*.md
 website/部署步驟.md
 website/金流串接說明.md
-# website/downloads/*.dmg  # 允許 DMG 被提交
+# DMG 不上傳 Git（改用外部連結 + MAC_DMG_URL）
+website/public/downloads/*.dmg
