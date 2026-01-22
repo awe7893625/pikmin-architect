@@ -1487,34 +1487,6 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // 優先從 public/downloads 直接提供（最簡單，一般使用者直接下載）
-    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
-    if (fs.existsSync(publicDownloadsPath)) {
-        // 檢查檔案大小，避免提供 Git LFS 指標檔（通常 < 200 bytes）
-        const stats = fs.statSync(publicDownloadsPath);
-        if (stats.size < 200) {
-            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔，跳過本地檔案`);
-            // 繼續執行，嘗試代理下載或回退
-        } else {
-            // 設置正確的 Content-Type
-            if (file.endsWith('.dmg')) {
-                res.setHeader('Content-Type', 'application/x-apple-diskimage');
-            } else if (file.endsWith('.zip')) {
-                res.setHeader('Content-Type', 'application/zip');
-            } else if (file.endsWith('.exe')) {
-                res.setHeader('Content-Type', 'application/x-msdownload');
-            }
-            
-            // 防止 Safari 添加 quarantine 屬性的關鍵 headers
-            res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
-            res.setHeader('X-Content-Type-Options', 'nosniff');
-            res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
-            res.setHeader('Pragma', 'public');
-            
-            return res.sendFile(publicDownloadsPath);
-        }
-    }
-
     // 優先：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
     // 因為 Vercel 部署時可能拿到 LFS 指標檔，所以優先使用代理下載
     if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
@@ -1583,6 +1555,34 @@ app.get('/downloads/:file', (req, res) => {
         });
         
         return;
+    }
+
+    // 備用：從 public/downloads 直接提供（檢查檔案大小，避免提供 LFS 指標檔）
+    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
+    if (fs.existsSync(publicDownloadsPath)) {
+        // 檢查檔案大小，避免提供 Git LFS 指標檔（通常 < 200 bytes）
+        const stats = fs.statSync(publicDownloadsPath);
+        if (stats.size < 200) {
+            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔，跳過`);
+            // 繼續執行，嘗試其他方式
+        } else {
+            // 設置正確的 Content-Type
+            if (file.endsWith('.dmg')) {
+                res.setHeader('Content-Type', 'application/x-apple-diskimage');
+            } else if (file.endsWith('.zip')) {
+                res.setHeader('Content-Type', 'application/zip');
+            } else if (file.endsWith('.exe')) {
+                res.setHeader('Content-Type', 'application/x-msdownload');
+            }
+            
+            // 防止 Safari 添加 quarantine 屬性的關鍵 headers
+            res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.setHeader('Pragma', 'public');
+            
+            return res.sendFile(publicDownloadsPath);
+        }
     }
 
     // 備用：從 downloads 目錄提供
