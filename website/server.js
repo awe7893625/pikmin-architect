@@ -1564,27 +1564,6 @@ app.get('/downloads/:file', (req, res) => {
         return;
     }
 
-    // 優先從 public/downloads 提供（一般使用者直接下載，不跳轉到 GitHub）
-    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
-    if (fs.existsSync(publicDownloadsPath)) {
-        // 設置正確的 Content-Type
-        if (file.endsWith('.dmg')) {
-            res.setHeader('Content-Type', 'application/x-apple-diskimage');
-        } else if (file.endsWith('.zip')) {
-            res.setHeader('Content-Type', 'application/zip');
-        } else if (file.endsWith('.exe')) {
-            res.setHeader('Content-Type', 'application/x-msdownload');
-        }
-        
-        // 防止 Safari 添加 quarantine 屬性的關鍵 headers
-        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
-        res.setHeader('Pragma', 'public');
-        
-        return res.sendFile(publicDownloadsPath);
-    }
-
     // 備用：從 downloads 目錄提供
     const filePath = path.join(__dirname, 'downloads', file);
     if (fs.existsSync(filePath)) {
