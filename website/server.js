@@ -1487,7 +1487,28 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // 如果檔案是 DMG 且環境變數有設定，直接代理下載（不讓使用者看到 GitHub）
+    // 優先從 public/downloads 直接提供（最簡單，一般使用者直接下載）
+    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
+    if (fs.existsSync(publicDownloadsPath)) {
+        // 設置正確的 Content-Type
+        if (file.endsWith('.dmg')) {
+            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        } else if (file.endsWith('.zip')) {
+            res.setHeader('Content-Type', 'application/zip');
+        } else if (file.endsWith('.exe')) {
+            res.setHeader('Content-Type', 'application/x-msdownload');
+        }
+        
+        // 防止 Safari 添加 quarantine 屬性的關鍵 headers
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
+        res.setHeader('Pragma', 'public');
+        
+        return res.sendFile(publicDownloadsPath);
+    }
+
+    // 備用：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
     if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
         const downloadUrl = process.env.MAC_DMG_URL;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
