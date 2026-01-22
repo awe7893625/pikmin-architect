@@ -76,3 +76,5 @@ website/部署步驟.md
 website/金流串接說明.md
 # DMG 不上傳 Git（改用外部連結 + MAC_DMG_URL）
 website/public/downloads/*.dmg
+.vercel
+.env*.local
