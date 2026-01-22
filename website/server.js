@@ -1487,11 +1487,8 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // 如果是 DMG 檔案，直接重定向到 GitHub Release（最優先，確保可用）
-    if (file === 'ios-location-simulator-mac.dmg') {
-        console.log(`📥 [下載] 重定向到 GitHub Release 最新版本`);
-        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg');
-    }
+    // 如果是 DMG 檔案，優先使用環境變數或代理下載（不直接重定向，避免跳到 GitHub 頁面）
+    // 這個檢查放在最後，確保優先使用代理下載
 
     // 優先：從 public/downloads 直接提供（簡單直接，讓 Vercel filesystem 處理）
     const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
@@ -1570,11 +1567,91 @@ app.get('/downloads/:file', (req, res) => {
         return;
     }
     
-    // 如果請求的是 DMG 檔案，直接重定向到 GitHub Release（最新版本）
+    // 如果請求的是 DMG 檔案，使用環境變數或最新版本代理下載
     if (file === 'ios-location-simulator-mac.dmg') {
-        console.log(`📥 [下載] 重定向到 GitHub Release 最新版本`);
-        // 重定向到最新 Release 的 DMG 下載連結
-        return res.redirect(302, 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg');
+        // 優先使用環境變數
+        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg';
+        console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
+        
+        // 設置正確的 headers
+        res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        
+        // 使用 stream 代理下載，不讓使用者看到原始 URL
+        const https = require('https');
+        const http = require('http');
+        const url = require('url');
+        const parsedUrl = url.parse(downloadUrl);
+        const client = parsedUrl.protocol === 'https:' ? https : http;
+        
+        const proxyReq = client.get(parsedUrl, (proxyRes) => {
+            if (proxyRes.statusCode !== 200) {
+                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，等待 CDN 同步或使用備用連結`);
+                // 如果 GitHub 回傳 404，嘗試使用備用連結或等待
+                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg';
+                console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
+                const fallbackParsed = url.parse(fallbackUrl);
+                const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
+                const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
+                    if (fallbackRes.statusCode === 200) {
+                        res.statusCode = fallbackRes.statusCode;
+                        Object.keys(fallbackRes.headers).forEach(key => {
+                            if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                                res.setHeader(key, fallbackRes.headers[key]);
+                            }
+                        });
+                        fallbackRes.pipe(res);
+                    } else {
+                        // 如果備用連結也失敗，返回錯誤而不是重定向到頁面
+                        return res.status(503).json({ 
+                            error: '下載暫時不可用', 
+                            message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
+                            code: 'DOWNLOAD_UNAVAILABLE'
+                        });
+                    }
+                });
+                fallbackReq.on('error', () => {
+                    return res.status(503).json({ 
+                        error: '下載暫時不可用', 
+                        message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
+                        code: 'DOWNLOAD_UNAVAILABLE'
+                    });
+                });
+                return;
+            }
+            
+            res.statusCode = proxyRes.statusCode;
+            Object.keys(proxyRes.headers).forEach(key => {
+                if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                    res.setHeader(key, proxyRes.headers[key]);
+                }
+            });
+            proxyRes.pipe(res);
+        });
+        
+        proxyReq.on('error', (err) => {
+            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
+            // 返回錯誤而不是重定向
+            return res.status(503).json({ 
+                error: '下載失敗', 
+                message: '無法連接到下載伺服器，請稍候再試',
+                code: 'DOWNLOAD_PROXY_ERROR'
+            });
+        });
+        
+        proxyReq.setTimeout(15000, () => {
+            proxyReq.destroy();
+            console.log(`⚠️ [下載] 代理下載超時`);
+            return res.status(504).json({ 
+                error: '下載超時', 
+                message: '下載請求超時，請稍候再試',
+                code: 'DOWNLOAD_TIMEOUT'
+            });
+        });
+        
+        return;
     }
 
     // 備用：從 downloads 目錄提供
