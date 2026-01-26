@@ -1490,7 +1490,7 @@ app.get('/downloads/:file', (req, res) => {
     // ⚠️ 對於 DMG 檔案，優先使用代理下載（從 GitHub Release），避免提供本地可能存在的 Git LFS 指標檔
     if (file === 'ios-location-simulator-mac.dmg') {
         // 優先使用環境變數，如果沒有則使用最新版本
-        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260123-225151/ios-location-simulator-mac.dmg';
+        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260126-205334/ios-location-simulator-mac.dmg';
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
         // 設置正確的 headers
@@ -1510,7 +1510,7 @@ app.get('/downloads/:file', (req, res) => {
             if (proxyRes.statusCode !== 200) {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用備用連結
-                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg';
+                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260126-205334/ios-location-simulator-mac.dmg';
                 console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
                 const fallbackParsed = url.parse(fallbackUrl);
                 const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
