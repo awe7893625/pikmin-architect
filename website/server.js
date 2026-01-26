@@ -1509,36 +1509,47 @@ app.get('/downloads/:file', (req, res) => {
         const proxyReq = client.get(parsedUrl, (proxyRes) => {
             if (proxyRes.statusCode !== 200) {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
-                // 如果 GitHub 回傳 404，嘗試使用備用連結
-                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260126-205334/ios-location-simulator-mac.dmg';
-                console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
-                const fallbackParsed = url.parse(fallbackUrl);
-                const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
-                const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
-                    if (fallbackRes.statusCode === 200) {
-                        res.statusCode = fallbackRes.statusCode;
-                        Object.keys(fallbackRes.headers).forEach(key => {
-                            if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
-                                res.setHeader(key, fallbackRes.headers[key]);
-                            }
-                        });
-                        fallbackRes.pipe(res);
-                    } else {
-                        // 如果備用連結也失敗，返回錯誤而不是重定向到頁面
+                // 如果 GitHub 回傳 404，嘗試使用多個備用連結
+                const fallbackUrls = [
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg'
+                ];
+                
+                let fallbackIndex = 0;
+                const tryFallback = () => {
+                    if (fallbackIndex >= fallbackUrls.length) {
                         return res.status(503).json({ 
                             error: '下載暫時不可用', 
-                            message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
-                            code: 'DOWNLOAD_UNAVAILABLE'
+                            message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試，或直接從 GitHub Releases 頁面下載',
+                            code: 'DOWNLOAD_UNAVAILABLE',
+                            directUrl: 'https://github.com/awe7893625/pikmin-architect/releases/latest'
                         });
                     }
-                });
-                fallbackReq.on('error', () => {
-                    return res.status(503).json({ 
-                        error: '下載暫時不可用', 
-                        message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
-                        code: 'DOWNLOAD_UNAVAILABLE'
+                    
+                    const fallbackUrl = fallbackUrls[fallbackIndex];
+                    console.log(`📥 [下載] 嘗試備用連結 ${fallbackIndex + 1}/${fallbackUrls.length}: ${fallbackUrl}`);
+                    const fallbackParsed = url.parse(fallbackUrl);
+                    const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
+                    const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
+                        if (fallbackRes.statusCode === 200) {
+                            res.statusCode = fallbackRes.statusCode;
+                            Object.keys(fallbackRes.headers).forEach(key => {
+                                if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
+                                    res.setHeader(key, fallbackRes.headers[key]);
+                                }
+                            });
+                            fallbackRes.pipe(res);
+                        } else {
+                            fallbackIndex++;
+                            tryFallback();
+                        }
                     });
-                });
+                    fallbackReq.on('error', () => {
+                        fallbackIndex++;
+                        tryFallback();
+                    });
+                };
+                tryFallback();
                 return;
             }
             
