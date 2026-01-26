@@ -1487,40 +1487,10 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // 如果是 DMG 檔案，優先使用環境變數或代理下載（不直接重定向，避免跳到 GitHub 頁面）
-    // 這個檢查放在最後，確保優先使用代理下載
-
-    // 優先：從 public/downloads 直接提供（簡單直接，讓 Vercel filesystem 處理）
-    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
-    if (fs.existsSync(publicDownloadsPath)) {
-        // 檢查檔案大小，避免提供 Git LFS 指標檔（通常 < 200 bytes）
-        const stats = fs.statSync(publicDownloadsPath);
-        if (stats.size < 200) {
-            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔，嘗試代理下載`);
-            // 繼續執行，嘗試代理下載
-        } else {
-            // 設置正確的 Content-Type
-            if (file.endsWith('.dmg')) {
-                res.setHeader('Content-Type', 'application/x-apple-diskimage');
-            } else if (file.endsWith('.zip')) {
-                res.setHeader('Content-Type', 'application/zip');
-            } else if (file.endsWith('.exe')) {
-                res.setHeader('Content-Type', 'application/x-msdownload');
-            }
-            
-            // 防止 Safari 添加 quarantine 屬性的關鍵 headers
-            res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
-            res.setHeader('X-Content-Type-Options', 'nosniff');
-            res.setHeader('Cache-Control', 'public, max-age=3600'); // 允許快取 1 小時
-            res.setHeader('Pragma', 'public');
-            
-            return res.sendFile(publicDownloadsPath);
-        }
-    }
-
-    // 備用：如果環境變數有設定，代理下載（不讓使用者看到 GitHub）
-    if (file === 'ios-location-simulator-mac.dmg' && process.env.MAC_DMG_URL) {
-        const downloadUrl = process.env.MAC_DMG_URL;
+    // ⚠️ 對於 DMG 檔案，優先使用代理下載（從 GitHub Release），避免提供本地可能存在的 Git LFS 指標檔
+    if (file === 'ios-location-simulator-mac.dmg') {
+        // 優先使用環境變數，如果沒有則使用最新版本
+        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260123-225151/ios-location-simulator-mac.dmg';
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
         // 設置正確的 headers
@@ -1540,7 +1510,7 @@ app.get('/downloads/:file', (req, res) => {
             if (proxyRes.statusCode !== 200) {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用備用連結
-                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg';
+                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg';
                 console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
                 const fallbackParsed = url.parse(fallbackUrl);
                 const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
@@ -1603,93 +1573,39 @@ app.get('/downloads/:file', (req, res) => {
         
         return;
     }
-    
-    // 如果請求的是 DMG 檔案，使用環境變數或最新版本代理下載
-    if (file === 'ios-location-simulator-mac.dmg') {
-        // 優先使用環境變數
-        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg';
-        console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
+
+    // 對於其他檔案，從 public/downloads 直接提供
+    const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
+    if (fs.existsSync(publicDownloadsPath)) {
+        // 檢查檔案大小，避免提供 Git LFS 指標檔（通常 < 200 bytes）
+        const stats = fs.statSync(publicDownloadsPath);
+        if (stats.size < 200) {
+            console.log(`⚠️ [下載] 檔案太小（${stats.size} bytes），可能是 LFS 指標檔`);
+            return res.status(404).json({ 
+                error: '檔案不存在', 
+                message: '檔案可能尚未上傳或正在處理中',
+                code: 'FILE_NOT_FOUND'
+            });
+        }
         
-        // 設置正確的 headers
-        res.setHeader('Content-Type', 'application/x-apple-diskimage');
-        res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
+        // 設置正確的 Content-Type
+        if (file.endsWith('.dmg')) {
+            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+        } else if (file.endsWith('.zip')) {
+            res.setHeader('Content-Type', 'application/zip');
+        } else if (file.endsWith('.exe')) {
+            res.setHeader('Content-Type', 'application/x-msdownload');
+        }
+        
+        // 防止 Safari 添加 quarantine 屬性的關鍵 headers
+        res.setHeader('Content-Disposition', `attachment; filename="${file}"`);
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Pragma', 'public');
         
-        // 使用 stream 代理下載，不讓使用者看到原始 URL
-        const https = require('https');
-        const http = require('http');
-        const url = require('url');
-        const parsedUrl = url.parse(downloadUrl);
-        const client = parsedUrl.protocol === 'https:' ? https : http;
-        
-        const proxyReq = client.get(parsedUrl, (proxyRes) => {
-            if (proxyRes.statusCode !== 200) {
-                console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，等待 CDN 同步或使用備用連結`);
-                // 如果 GitHub 回傳 404，嘗試使用備用連結或等待
-                const fallbackUrl = 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg';
-                console.log(`📥 [下載] 嘗試備用連結: ${fallbackUrl}`);
-                const fallbackParsed = url.parse(fallbackUrl);
-                const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
-                const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
-                    if (fallbackRes.statusCode === 200) {
-                        res.statusCode = fallbackRes.statusCode;
-                        Object.keys(fallbackRes.headers).forEach(key => {
-                            if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
-                                res.setHeader(key, fallbackRes.headers[key]);
-                            }
-                        });
-                        fallbackRes.pipe(res);
-                    } else {
-                        // 如果備用連結也失敗，返回錯誤而不是重定向到頁面
-                        return res.status(503).json({ 
-                            error: '下載暫時不可用', 
-                            message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
-                            code: 'DOWNLOAD_UNAVAILABLE'
-                        });
-                    }
-                });
-                fallbackReq.on('error', () => {
-                    return res.status(503).json({ 
-                        error: '下載暫時不可用', 
-                        message: 'GitHub Release CDN 正在同步，請稍候 5-10 分鐘後再試',
-                        code: 'DOWNLOAD_UNAVAILABLE'
-                    });
-                });
-                return;
-            }
-            
-            res.statusCode = proxyRes.statusCode;
-            Object.keys(proxyRes.headers).forEach(key => {
-                if (key.toLowerCase() !== 'content-encoding' && key.toLowerCase() !== 'transfer-encoding') {
-                    res.setHeader(key, proxyRes.headers[key]);
-                }
-            });
-            proxyRes.pipe(res);
-        });
-        
-        proxyReq.on('error', (err) => {
-            console.error(`❌ [下載] 代理下載失敗: ${err.message}`);
-            // 返回錯誤而不是重定向
-            return res.status(503).json({ 
-                error: '下載失敗', 
-                message: '無法連接到下載伺服器，請稍候再試',
-                code: 'DOWNLOAD_PROXY_ERROR'
-            });
-        });
-        
-        proxyReq.setTimeout(15000, () => {
-            proxyReq.destroy();
-            console.log(`⚠️ [下載] 代理下載超時`);
-            return res.status(504).json({ 
-                error: '下載超時', 
-                message: '下載請求超時，請稍候再試',
-                code: 'DOWNLOAD_TIMEOUT'
-            });
-        });
-        
-        return;
+        return res.sendFile(publicDownloadsPath);
     }
+
 
     // 備用：從 downloads 目錄提供
     const filePath = path.join(__dirname, 'downloads', file);
