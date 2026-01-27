@@ -76,13 +76,37 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if FileManager.default.fileExists(atPath: preferred) { return preferred }
         return "\(bundleResourcesPath)/lib"
     }
-    private var pythonPath: String {
-        if FileManager.default.fileExists(atPath: bundledPythonPath) {
+
+    // 實際可用的 Python（避免「內建 python 存在但跑不起來」造成隧道永遠失敗）
+    private var resolvedPythonPath: String?
+    private func isPythonRunnable(_ path: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        let out = shell("\"\(path)\" --version 2>&1")
+        if out.contains("dyld") || out.contains("Library not loaded") || out.contains("built for macOS") {
+            return false
+        }
+        return out.contains("Python")
+    }
+    private func resolvePythonPath() -> String {
+        if let cached = resolvedPythonPath, isPythonRunnable(cached) { return cached }
+
+        // 1) 先嘗試 App 內建 Python（若在使用者 OS 上跑不起來就回退）
+        if isPythonRunnable(bundledPythonPath) {
+            resolvedPythonPath = bundledPythonPath
             return bundledPythonPath
         }
-        if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/python3") {
-            return "/opt/homebrew/bin/python3"
+
+        // 2) 回退：Homebrew / 系統 Python
+        let candidates = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
+        for c in candidates {
+            if isPythonRunnable(c) {
+                resolvedPythonPath = c
+                return c
+            }
         }
+
+        // 3) 最後仍給一個路徑（讓下游錯誤訊息能被捕捉）
+        resolvedPythonPath = "/usr/bin/python3"
         return "/usr/bin/python3"
     }
     private var ideviceIdPath: String? {
@@ -92,7 +116,11 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if FileManager.default.fileExists(atPath: "/usr/local/bin/idevice_id") { return "/usr/local/bin/idevice_id" }
         return nil
     }
-    private func envPrefixForShell() -> String {
+    private func envPrefixForShell(pythonPath: String) -> String {
+        // 只有使用 App 內建 Python/工具時才注入 DYLD_LIBRARY_PATH / PATH，避免污染系統 Python
+        if !pythonPath.hasPrefix(bundleResourcesPath) {
+            return ""
+        }
         var parts: [String] = []
         if FileManager.default.fileExists(atPath: bundledLibPath) {
             parts.append("DYLD_LIBRARY_PATH=\"\(bundledLibPath)\"")
@@ -104,11 +132,12 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         return "env " + parts.joined(separator: " ")
     }
     private func pythonCommand(_ args: String) -> String {
-        let env = envPrefixForShell()
+        let py = resolvePythonPath()
+        let env = envPrefixForShell(pythonPath: py)
         if env.isEmpty {
-            return "\"\(pythonPath)\" \(args)"
+            return "\"\(py)\" \(args)"
         }
-        return "\(env) \"\(pythonPath)\" \(args)"
+        return "\(env) \"\(py)\" \(args)"
     }
     private func escapeForAppleScript(_ text: String) -> String {
         text.replacingOccurrences(of: "\"", with: "\\\"")
