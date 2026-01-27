@@ -239,5 +239,17 @@ xcrun stapler staple "$DMG_PATH" >/dev/null || true
 xcrun stapler validate "$DMG_PATH" >/dev/null || true
 
 echo "✅ 完成：$DMG_PATH"
+echo ""
+echo "🔍 執行驗證檢查..."
+if [ -f "$ROOT_DIR/validate_dmg.sh" ]; then
+  bash "$ROOT_DIR/validate_dmg.sh" "$DMG_PATH" || {
+    echo ""
+    echo "⚠️  驗證檢查發現問題，請檢查上述輸出並修復後再上傳到 GitHub Release"
+    exit 1
+  }
+else
+  echo "⚠️  找不到 validate_dmg.sh，跳過驗證"
+fi
+echo ""
 echo "下一步：把 DMG 推送到 GitHub 讓網站更新下載（或我可以幫你一鍵 commit/push）。"
 
