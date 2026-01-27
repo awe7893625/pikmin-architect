@@ -764,7 +764,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             print("📱 [設備偵測] 嘗試使用 libimobiledevice 檢測...")
             let ideviceOutput: String
             if let idevice = self.ideviceIdPath {
-                let env = self.envPrefixForShell()
+                let env = self.envPrefixForShell(pythonPath: self.resolvePythonPath())
                 let cmd = env.isEmpty ? "\"\(idevice)\" -l 2>&1" : "\(env) \"\(idevice)\" -l 2>&1"
                 ideviceOutput = self.shell(cmd)
             } else {
@@ -1893,7 +1893,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         // fallback: libimobiledevice only provides UDID list
         let ideviceOutput: String
         if let idevice = ideviceIdPath {
-            let env = envPrefixForShell()
+            let env = envPrefixForShell(pythonPath: resolvePythonPath())
             let cmd = env.isEmpty ? "\"\(idevice)\" -l 2>/dev/null" : "\(env) \"\(idevice)\" -l 2>/dev/null"
             ideviceOutput = shell(cmd)
         } else {
