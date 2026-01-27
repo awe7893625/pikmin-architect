@@ -1487,24 +1487,10 @@ app.post('/api/admin/create-license', async (req, res) => {
 app.get('/downloads/:file', (req, res) => {
     const file = req.params.file;
 
-    // ⚠️ 對於 DMG 檔案，優先檢查本地文件（如果存在且大小正確），否則從 GitHub Release 代理下載
+    // ⚠️ 對於 DMG 檔案，直接從 GitHub Release 代理下載（使用 browser_download_url）
     if (file === 'ios-location-simulator-mac.dmg') {
-        // 先檢查本地文件是否存在且大小正確（> 100MB）
-        const publicDownloadsPath = path.join(__dirname, 'public', 'downloads', file);
-        if (fs.existsSync(publicDownloadsPath)) {
-            const stats = fs.statSync(publicDownloadsPath);
-            // 如果本地文件大小正確（> 100MB），直接提供
-            if (stats.size > 100 * 1024 * 1024) {
-                console.log(`📥 [下載] 使用本地 DMG 文件（${Math.round(stats.size / 1024 / 1024)}MB）`);
-                res.setHeader('Content-Type', 'application/x-apple-diskimage');
-                res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
-                res.setHeader('X-Content-Type-Options', 'nosniff');
-                res.setHeader('Cache-Control', 'public, max-age=3600');
-                return res.sendFile(publicDownloadsPath);
-            }
-        }
-        
-        // 如果本地文件不存在或太小，嘗試從 GitHub Release 代理下載
+        // 使用 GitHub Release 的 browser_download_url（更可靠）
+        // 格式：https://github.com/OWNER/REPO/releases/download/TAG/FILENAME
         const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260126-205334/ios-location-simulator-mac.dmg';
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
