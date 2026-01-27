@@ -1491,8 +1491,12 @@ app.get('/downloads/:file', (req, res) => {
     if (file === 'ios-location-simulator-mac.dmg') {
         // 使用 GitHub Release 的 browser_download_url（更可靠）
         // 格式：https://github.com/OWNER/REPO/releases/download/TAG/FILENAME
-        // 使用環境變數或動態獲取最新版本（需要等待 GitHub CDN 同步）
-        const downloadUrl = process.env.MAC_DMG_URL || 'https://github.com/awe7893625/pikmin-architect/releases/latest/download/ios-location-simulator-mac.dmg';
+        // 重要：GitHub Release 資產通常會先回 302 轉到 release-assets.githubusercontent.com
+        // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
+        const rawUrl =
+            process.env.MAC_DMG_URL ||
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260127-124000-public/ios-location-simulator-mac.dmg';
+        const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
         // 設置正確的 headers
@@ -1509,12 +1513,22 @@ app.get('/downloads/:file', (req, res) => {
         const client = parsedUrl.protocol === 'https:' ? https : http;
         
         const proxyReq = client.get(parsedUrl, (proxyRes) => {
+            // GitHub 會回 302 (Location: release-assets...)；直接把使用者導向到真正的資產下載位址即可
+            if ((proxyRes.statusCode === 301 || proxyRes.statusCode === 302 || proxyRes.statusCode === 303 || proxyRes.statusCode === 307 || proxyRes.statusCode === 308) && proxyRes.headers.location) {
+                res.setHeader('Content-Type', 'application/x-apple-diskimage');
+                res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
+                res.setHeader('X-Content-Type-Options', 'nosniff');
+                // 導向到 release-assets.githubusercontent.com（不是 GitHub 頁面）
+                return res.redirect(proxyRes.statusCode, proxyRes.headers.location);
+            }
+
             if (proxyRes.statusCode !== 200) {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg'
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260127-121727/ios-location-simulator-mac.dmg?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg?download=1'
                 ];
                 
                 let fallbackIndex = 0;
@@ -1533,6 +1547,12 @@ app.get('/downloads/:file', (req, res) => {
                     const fallbackParsed = url.parse(fallbackUrl);
                     const fallbackClient = fallbackParsed.protocol === 'https:' ? https : http;
                     const fallbackReq = fallbackClient.get(fallbackParsed, (fallbackRes) => {
+                        if ((fallbackRes.statusCode === 301 || fallbackRes.statusCode === 302 || fallbackRes.statusCode === 303 || fallbackRes.statusCode === 307 || fallbackRes.statusCode === 308) && fallbackRes.headers.location) {
+                            res.setHeader('Content-Type', 'application/x-apple-diskimage');
+                            res.setHeader('Content-Disposition', 'attachment; filename="ios-location-simulator-mac.dmg"');
+                            res.setHeader('X-Content-Type-Options', 'nosniff');
+                            return res.redirect(fallbackRes.statusCode, fallbackRes.headers.location);
+                        }
                         if (fallbackRes.statusCode === 200) {
                             res.statusCode = fallbackRes.statusCode;
                             Object.keys(fallbackRes.headers).forEach(key => {
