@@ -2184,6 +2184,17 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// 版本資訊（用於確認 Vercel 實際跑的是哪個 commit）
+app.get('/api/version', (req, res) => {
+    res.json({
+        status: 'ok',
+        commit: SERVER_COMMIT,
+        entry: SERVER_ENTRY,
+        vercelEnv: process.env.VERCEL_ENV || null,
+        timestamp: new Date().toISOString()
+    });
+});
+
 // 靜態文件服務（放在最後，作為 fallback）
 app.use(express.static('public'));
 app.use('/locales', express.static('locales'));
