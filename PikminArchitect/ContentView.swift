@@ -974,9 +974,20 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         errorMsg += "1. iPhone/iPad 已用 USB 線連接\n"
                         errorMsg += "2. 設備已解鎖\n"
                         errorMsg += "3. 已點擊「信任此電腦」\n"
+                    } else if lastError.contains("No module named pymobiledevice3") || lastError.contains("No module named 'pymobiledevice3'") {
+                        errorMsg += "❌ 缺少 pymobiledevice3 模組\n\n"
+                        errorMsg += "請在終端機執行以下指令安裝：\n"
+                        errorMsg += "pip3 install pymobiledevice3\n\n"
+                        errorMsg += "或使用 brew 安裝：\n"
+                        errorMsg += "brew install --cask pymobiledevice3\n\n"
+                        errorMsg += "安裝完成後，重新啟動 App 並點擊「初始化連線」\n"
                     } else if !lastError.isEmpty {
                         let errorPreview = String(lastError.prefix(300))
                         errorMsg += "錯誤訊息：\n\(errorPreview)\n\n"
+                        if lastError.contains("python") || lastError.contains("Python") {
+                            errorMsg += "\n💡 提示：如果提示缺少 Python 模組，請嘗試：\n"
+                            errorMsg += "pip3 install pymobiledevice3\n"
+                        }
                     }
                     
                     DispatchQueue.main.async {
