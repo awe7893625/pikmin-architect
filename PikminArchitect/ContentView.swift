@@ -79,6 +79,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
 
     // 實際可用的 Python（避免「內建 python 存在但跑不起來」造成隧道永遠失敗）
     private var resolvedPythonPath: String?
+    private var pymobiledevice3Installed: Bool = false
+    
     private func isPythonRunnable(_ path: String) -> Bool {
         guard FileManager.default.fileExists(atPath: path) else { return false }
         let out = shell("\"\(path)\" --version 2>&1")
@@ -87,12 +89,44 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
         return out.contains("Python")
     }
+    
+    private func hasPymobiledevice3(_ pythonPath: String) -> Bool {
+        let out = shell("\"\(pythonPath)\" -m pymobiledevice3 --version 2>&1")
+        return out.contains("pymobiledevice3") || out.contains("version")
+    }
+    
+    private func autoInstallPymobiledevice3IfNeeded(_ pythonPath: String) {
+        if pymobiledevice3Installed { return }
+        if hasPymobiledevice3(pythonPath) {
+            pymobiledevice3Installed = true
+            return
+        }
+        
+        print("📦 [自動安裝] 偵測到缺少 pymobiledevice3，正在自動安裝...")
+        DispatchQueue.main.async {
+            self.webView?.evaluateJavaScript("setUI('connecting', ' 首次使用：正在安裝必要套件...')")
+        }
+        
+        // 嘗試自動安裝（使用 --user 不需要 sudo）
+        let installOut = shell("\"\(pythonPath)\" -m pip install --user --quiet pymobiledevice3 2>&1")
+        
+        if hasPymobiledevice3(pythonPath) {
+            print("✅ [自動安裝] pymobiledevice3 安裝成功")
+            pymobiledevice3Installed = true
+        } else {
+            print("⚠️ [自動安裝] 自動安裝失敗，輸出: \(installOut)")
+            pymobiledevice3Installed = false
+        }
+    }
+    
     private func resolvePythonPath() -> String {
         if let cached = resolvedPythonPath, isPythonRunnable(cached) { return cached }
 
         // 1) 先嘗試 App 內建 Python（若在使用者 OS 上跑不起來就回退）
         if isPythonRunnable(bundledPythonPath) {
             resolvedPythonPath = bundledPythonPath
+            // 自動安裝 pymobiledevice3（如果需要）
+            autoInstallPymobiledevice3IfNeeded(bundledPythonPath)
             return bundledPythonPath
         }
 
@@ -101,6 +135,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         for c in candidates {
             if isPythonRunnable(c) {
                 resolvedPythonPath = c
+                // 自動安裝 pymobiledevice3（如果需要）
+                autoInstallPymobiledevice3IfNeeded(c)
                 return c
             }
         }
