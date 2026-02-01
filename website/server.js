@@ -1495,7 +1495,7 @@ app.get('/downloads/:file', (req, res) => {
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
         const rawUrl =
             process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260130-231154/ios-location-simulator-mac.dmg';
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260201-083700/ios-location-simulator-mac.dmg';
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         

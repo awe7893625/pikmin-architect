@@ -41,6 +41,13 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
 
     private let preferredUDIDKey = "preferredUDID"
     private var preferredUDID: String = ""
+    
+    /// 取得實際用於 simulate-location 的 UDID：優先使用者選擇，否則用隧道設定的
+    private func effectiveUDID() -> String {
+        let preferred = preferredUDID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !preferred.isEmpty { return preferred }
+        return udid
+    }
 
     // 免安裝依賴：依架構選擇 App 內建的 Python/工具，找不到才回退到系統
     private var currentMachineArch: String {
@@ -509,10 +516,14 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         // 更新 WebView 地圖標記
         self.webView?.evaluateJavaScript("syncLocation(\(lat), \(lon))")
         
-        // 檢查設備是否已連線
-        guard !udid.isEmpty else {
+        // 檢查設備是否已連線（使用 effectiveUDID 以支援使用者選擇的裝置）
+        let targetUDID = effectiveUDID()
+        guard !targetUDID.isEmpty else {
+            print("⚠️ [瞬移] UDID 為空，無法發送位置")
             return
         }
+        
+        print("📍 [瞬移] 準備發送位置: lat=\(lat), lon=\(lon), udid=\(targetUDID)")
         
         // 瞬移使用精確位置，只添加最小的 GPS 誤差（約 ±0.15 公尺）
         // 不使用多層次抖動，確保精確瞬移
@@ -520,9 +531,17 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         let finalLat = lat + Double.random(in: -jitter...jitter)
         let finalLon = lon + Double.random(in: -jitter...jitter)
         
-        // 立即發送位置（使用最高優先級）
+        // 立即發送位置（使用最高優先級，使用 effectiveUDID）
         DispatchQueue.global(qos: .userInteractive).async {
-            _ = self.shell(self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(self.udid) -- \(finalLat) \(finalLon)"))
+            let targetUDID = self.effectiveUDID()
+            let cmd = self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(targetUDID) -- \(finalLat) \(finalLon)")
+            print("🔧 [瞬移] 執行命令: \(cmd)")
+            let result = self.shell(cmd)
+            if !result.isEmpty {
+                print("📋 [瞬移] 命令輸出: \(result)")
+            } else {
+                print("✅ [瞬移] 命令執行完成（無輸出）")
+            }
         }
     }
 
@@ -747,8 +766,10 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             self.webView?.evaluateJavaScript("syncLocation(\(lat), \(lon))") 
         }
         
-        // 檢查設備是否已連線
-        guard !udid.isEmpty else { 
+        // 檢查設備是否已連線（使用 effectiveUDID）
+        let targetUDID = effectiveUDID()
+        guard !targetUDID.isEmpty else { 
+            print("⚠️ [transmit] UDID 為空，無法發送位置")
             return 
         }
 
@@ -763,9 +784,14 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         let finalLat = lat + jitter1 + jitter2
         let finalLon = lon + jitter1 + jitter2
 
-        // 優化：使用最高優先級發送，確保立即執行
+        // 優化：使用最高優先級發送，確保立即執行（使用 effectiveUDID）
         DispatchQueue.global(qos: .userInteractive).async {
-            _ = self.shell(self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(self.udid) -- \(finalLat) \(finalLon)"))
+            let targetUDID = self.effectiveUDID()
+            let cmd = self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(targetUDID) -- \(finalLat) \(finalLon)")
+            let result = self.shell(cmd)
+            if !result.isEmpty {
+                print("📋 [transmit] 命令輸出: \(result)")
+            }
         }
     }
 
@@ -956,9 +982,21 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     }
                 }
                 
-                // 步驟 4: 重新獲取裝置列表（確保顯示正確的裝置名稱）
+                // 步驟 4: 重新獲取裝置列表，並用 pymobiledevice3 的 UDID 更新（確保 simulate-location 格式正確）
+                let devices = self.listConnectedDevices()
+                var pmdUdid: String = ""
+                if let first = devices.first {
+                    pmdUdid = first["UniqueDeviceID"] ?? first["Identifier"] ?? ""
+                }
                 DispatchQueue.main.async {
-                    let devices = self.listConnectedDevices()
+                    if !pmdUdid.isEmpty {
+                        self.udid = pmdUdid
+                        if self.preferredUDID.isEmpty {
+                            self.preferredUDID = pmdUdid
+                            UserDefaults.standard.set(pmdUdid, forKey: self.preferredUDIDKey)
+                        }
+                        print("✅ [UDID] 已更新為 pymobiledevice3 格式: \(String(pmdUdid.prefix(12)))...")
+                    }
                     self.sendDeviceListToWeb(devices)
                     print("🔄 [裝置列表] 已更新裝置列表（共 \(devices.count) 個裝置）")
                 }
