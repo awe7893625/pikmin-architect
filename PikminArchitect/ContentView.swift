@@ -42,6 +42,66 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private let preferredUDIDKey = "preferredUDID"
     private var preferredUDID: String = ""
     
+    // ⚠️ 關鍵 6: Helper Process 持久連線管理（線程安全）
+    private let helperStateLock = NSLock()
+    private var _helperProcess: Process?
+    private var _helperStdin: Pipe?
+    private var _helperStdout: Pipe?
+    private var _helperReady: Bool = false
+    private var _helperDegraded: Bool = false
+    private var _lastSuccessfulSend: Date?
+    private var _helperSendCount: Int = 0
+    private var _helperConsecutiveErrors: Int = 0
+    
+    // Thread-safe accessors
+    private var helperProcess: Process? {
+        get {
+            helperStateLock.lock()
+            defer { helperStateLock.unlock() }
+            return _helperProcess
+        }
+        set {
+            helperStateLock.lock()
+            _helperProcess = newValue
+            helperStateLock.unlock()
+        }
+    }
+    
+    private var helperReady: Bool {
+        get {
+            helperStateLock.lock()
+            defer { helperStateLock.unlock() }
+            return _helperReady
+        }
+        set {
+            helperStateLock.lock()
+            _helperReady = newValue
+            helperStateLock.unlock()
+        }
+    }
+    
+    private var helperDegraded: Bool {
+        get {
+            helperStateLock.lock()
+            defer { helperStateLock.unlock() }
+            return _helperDegraded
+        }
+        set {
+            helperStateLock.lock()
+            _helperDegraded = newValue
+            helperStateLock.unlock()
+        }
+    }
+    
+    // 腳步擺動相關（v2.0 新增）
+    private var cruiseStepPhase: Double = 0.0  // 腳步相位
+    private var gpsNoiseLat: Double = 0.0      // GPS 噪點（平滑）
+    private var gpsNoiseLon: Double = 0.0      // GPS 噪點（平滑）
+    private var speedDrift: Double = 0.0       // 速度漂移
+    private var baseSpeedKmh: Double = 16.0    // 基礎速度
+    private let minSpeedKmh: Double = 14.0
+    private let maxSpeedKmh: Double = 18.0
+    
     /// 取得實際用於 simulate-location 的 UDID：優先使用者選擇，否則用隧道設定的
     private func effectiveUDID() -> String {
         let preferred = preferredUDID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -214,6 +274,153 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     }
     private func escapeForAppleScript(_ text: String) -> String {
         text.replacingOccurrences(of: "\"", with: "\\\"")
+    }
+    
+    // ========== Helper Process 持久連線管理 ==========
+    
+    /// 啟動 location_helper.py（持久連線模式）
+    private func startHelper() {
+        stopHelper()  // 先停止舊的
+        
+        let helperPath = Bundle.main.path(forResource: "location_helper", ofType: "py") ?? 
+                         "\(Bundle.main.bundlePath)/Contents/Resources/location_helper.py"
+        
+        guard FileManager.default.fileExists(atPath: helperPath) else {
+            print("❌ [Helper] 找不到 location_helper.py")
+            return
+        }
+        
+        let process = Process()
+        let stdin = Pipe()
+        let stdout = Pipe()
+        
+        process.executableURL = URL(fileURLWithPath: resolvePythonPath())
+        process.arguments = ["-u", helperPath, effectiveUDID()]
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        process.standardError = stdout
+        
+        // 設定環境變數
+        var env = ProcessInfo.processInfo.environment
+        if !bundledLibPath.isEmpty && FileManager.default.fileExists(atPath: bundledLibPath) {
+            env["DYLD_LIBRARY_PATH"] = bundledLibPath
+        }
+        if !bundledBinPath.isEmpty && FileManager.default.fileExists(atPath: bundledBinPath) {
+            env["PATH"] = "\(bundledBinPath):\(env["PATH"] ?? "")"
+        }
+        process.environment = env
+        
+        helperStateLock.lock()
+        _helperProcess = process
+        _helperStdin = stdin
+        _helperStdout = stdout
+        _helperReady = false
+        _helperDegraded = false
+        helperStateLock.unlock()
+        
+        // 監聽 stdout
+        stdout.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            guard let self = self else { return }
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            
+            if let output = String(data: data, encoding: .utf8) {
+                let lines = output.components(separatedBy: .newlines)
+                for line in lines {
+                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed.isEmpty { continue }
+                    
+                    if trimmed == "READY" {
+                        self.helperReady = true
+                        self.helperDegraded = false
+                        print("✅ [Helper] API 模式就緒")
+                    } else if trimmed == "READY:CLI" {
+                        self.helperReady = true
+                        self.helperDegraded = true
+                        print("⚠️ [Helper] CLI 降級模式就緒")
+                    } else if trimmed == "OK" {
+                        self.helperStateLock.lock()
+                        self._lastSuccessfulSend = Date()
+                        self._helperSendCount += 1
+                        self._helperConsecutiveErrors = 0
+                        self.helperStateLock.unlock()
+                    } else if trimmed.starts(with: "ERR:") {
+                        self.helperStateLock.lock()
+                        self._helperConsecutiveErrors += 1
+                        self.helperStateLock.unlock()
+                        print("⚠️ [Helper] 錯誤: \(trimmed)")
+                    } else if trimmed == "PONG" || trimmed == "PONG:DEGRADED" {
+                        // 心跳回應
+                    }
+                }
+            }
+        }
+        
+        do {
+            try process.run()
+            print("✅ [Helper] 進程已啟動")
+            
+            // 等待 READY 訊號（最多 5 秒）
+            for _ in 0..<50 {
+                Thread.sleep(forTimeInterval: 0.1)
+                if helperReady {
+                    break
+                }
+            }
+        } catch {
+            print("❌ [Helper] 啟動失敗: \(error)")
+            stopHelper()
+        }
+    }
+    
+    /// 停止 Helper Process
+    private func stopHelper() {
+        helperStateLock.lock()
+        let process = _helperProcess
+        let stdin = _helperStdin
+        _helperProcess = nil
+        _helperStdin = nil
+        _helperStdout = nil
+        _helperReady = false
+        helperStateLock.unlock()
+        
+        if let stdin = stdin, let handle = stdin.fileHandleForWriting as FileHandle? {
+            if let quitData = "QUIT\n".data(using: .utf8) {
+                try? handle.write(contentsOf: quitData)
+            }
+        }
+        
+        process?.terminate()
+    }
+    
+    /// 透過 Helper 發送座標（持久連線，零空窗期）
+    private func helperTransmit(lat: Double, lon: Double) -> Bool {
+        guard helperReady else { return false }
+        
+        helperStateLock.lock()
+        guard let stdin = _helperStdin else {
+            helperStateLock.unlock()
+            return false
+        }
+        helperStateLock.unlock()
+        
+        let command = "\(lat) \(lon)\n"
+        guard let data = command.data(using: .utf8) else { return false }
+        
+        do {
+            try stdin.fileHandleForWriting.write(contentsOf: data)
+            return true
+        } catch {
+            print("❌ [Helper] 寫入失敗: \(error)")
+            return false
+        }
+    }
+    
+    /// 高斯隨機數生成器（Box-Muller 轉換）
+    private func gaussianRandom() -> Double {
+        let u1 = Double.random(in: 0.0...1.0)
+        let u2 = Double.random(in: 0.0...1.0)
+        return sqrt(-2.0 * log(u1)) * cos(2.0 * .pi * u2)
     }
 
     override init() {
@@ -789,7 +996,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         self.recordPosition(lat: self.currentLat, lon: self.currentLon)
     }
 
-    // 發送座標至設備（優化版：增加隨機性，確保在主線程執行）
+    // 發送座標至設備（v2.0 優化版：持久連線 + 腳步擺動 + GPS 噪點）
     private func transmit(lat: Double, lon: Double) {
         // 優化：確保所有 UI 更新在主線程執行
         DispatchQueue.main.async { 
@@ -803,24 +1010,31 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             return 
         }
 
-        // 優化：增加位置變化的隨機性，使用多層次抖動
-        // 基礎抖動（約 ±0.5 公尺）+ 微小抖動（約 ±0.2 公尺）
-        let baseJitter = 0.0000045  // 約 ±0.5 公尺
-        let microJitter = 0.0000018  // 約 ±0.2 公尺（增加隨機性）
+        // v2.0: 優先使用 Helper Process（持久連線，速度快 10 倍）
+        if helperReady {
+            if helperTransmit(lat: lat, lon: lon) {
+                return  // Helper 成功，直接返回
+            }
+            // Helper 失敗，降級到 CLI
+            print("⚠️ [transmit] Helper 失敗，降級到 CLI")
+        }
         
-        // 組合多種隨機抖動，確保每次都有明顯的位置變化
+        // 降級：CLI 模式（每次啟動新程序，較慢）
+        // 添加多層次抖動減少精度誤差
+        let baseJitter = 0.0000045  // 約 ±0.5 公尺
+        let microJitter = 0.0000018  // 約 ±0.2 公尺
         let jitter1 = Double.random(in: -baseJitter...baseJitter)
         let jitter2 = Double.random(in: -microJitter...microJitter)
         let finalLat = lat + jitter1 + jitter2
         let finalLon = lon + jitter1 + jitter2
 
-        // 優化：使用最高優先級發送，確保立即執行（使用 effectiveUDID）
+        // 使用最高優先級發送
         DispatchQueue.global(qos: .userInteractive).async {
             let targetUDID = self.effectiveUDID()
             let cmd = self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(targetUDID) -- \(finalLat) \(finalLon)")
             let result = self.shell(cmd)
             if !result.isEmpty {
-                print("📋 [transmit] 命令輸出: \(result)")
+                print("📋 [transmit] CLI 輸出: \(result)")
             }
         }
     }
@@ -1067,6 +1281,17 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 if tunnelStarted && httpVerified {
                     DispatchQueue.main.async {
                         self.webView?.evaluateJavaScript("setUI('online', ' iPhone 已連線')")
+                    }
+                    
+                    // v2.0: 啟動 Helper Process（持久連線模式）
+                    DispatchQueue.global(qos: .utility).async {
+                        Thread.sleep(forTimeInterval: 1.0)  // 等隧道穩定
+                        self.startHelper()
+                        if self.helperReady {
+                            print("✅ [連線] Helper Process 已就緒")
+                        } else {
+                            print("⚠️ [連線] Helper 啟動失敗，將使用 CLI 模式")
+                        }
                     }
                 } else if tunnelStarted && !httpVerified {
                     print("⚠️ [連線驗證] 隧道已啟動但 HTTP 連線驗證失敗")
