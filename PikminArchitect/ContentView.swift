@@ -782,218 +782,214 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
     }
 
-    // 散花模式 (路徑移動) - 改進版：使用真實數據的移動模式
+    // ========== 散花模式 v2.1 ==========
+    // Catmull-Rom 樣條插值 + cruiseTick 0.3秒 + 步行擺動 + GPS噪點
+    
+    // 平滑路徑（Catmull-Rom 產出，每 1.5m 一個子點）
+    private var smoothPath: [[Double]] = []
+    private var smoothPathIndex: Int = 0
+    private var routeOriginal: [[Double]] = []  // 原始路由點
+    private var cruiseLoop: Bool = false         // 循環路線
+    private var cruiseLastTick: Date?
+    private var cruiseStartTime: Date?
+    private var walkingSpeedKmh: Double = 16.0   // 當前走路速度
+    private var lastHelperRestart: Date?         // 重啟冷卻
+    
+    // Catmull-Rom 插值
+    private func catmullRom(t: Double, p0: Double, p1: Double, p2: Double, p3: Double) -> Double {
+        let t2 = t * t
+        let t3 = t2 * t
+        return 0.5 * ((2.0 * p1) +
+                       (-p0 + p2) * t +
+                       (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 +
+                       (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+    }
+    
+    // Haversine 距離（公尺）
+    private func haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
+        let R = 6371000.0
+        let dLat = (lat2 - lat1) * .pi / 180.0
+        let dLon = (lon2 - lon1) * .pi / 180.0
+        let a = sin(dLat / 2) * sin(dLat / 2) +
+                cos(lat1 * .pi / 180.0) * cos(lat2 * .pi / 180.0) *
+                sin(dLon / 2) * sin(dLon / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return R * c
+    }
+    
+    // 建立平滑路徑（Catmull-Rom，每 metersPerSegment 公尺一個子點）
+    private func buildSmoothPath(waypoints: [[Double]], metersPerSegment: Double = 1.5) -> [[Double]] {
+        guard waypoints.count >= 2 else { return waypoints }
+        
+        // 擴充控制點（首尾各鏡射一個點）
+        var pts = waypoints
+        let first = pts[0]
+        let last = pts[pts.count - 1]
+        let mirrorFirst = [2.0 * first[0] - pts[1][0], 2.0 * first[1] - pts[1][1]]
+        let mirrorLast = [2.0 * last[0] - pts[pts.count - 2][0], 2.0 * last[1] - pts[pts.count - 2][1]]
+        pts.insert(mirrorFirst, at: 0)
+        pts.append(mirrorLast)
+        
+        var result: [[Double]] = []
+        
+        for i in 1..<(pts.count - 2) {
+            let segDist = haversineMeters(lat1: pts[i][0], lon1: pts[i][1],
+                                          lat2: pts[i + 1][0], lon2: pts[i + 1][1])
+            let steps = max(2, Int(segDist / metersPerSegment))
+            
+            for s in 0..<steps {
+                let t = Double(s) / Double(steps)
+                let lat = catmullRom(t: t, p0: pts[i - 1][0], p1: pts[i][0],
+                                     p2: pts[i + 1][0], p3: pts[i + 2][0])
+                let lon = catmullRom(t: t, p0: pts[i - 1][1], p1: pts[i][1],
+                                     p2: pts[i + 1][1], p3: pts[i + 2][1])
+                result.append([lat, lon])
+            }
+        }
+        
+        // 加上最後一個點
+        result.append(pts[pts.count - 2])
+        return result
+    }
+
+    // 散花模式入口（v2.1 - Catmull-Rom + cruiseTick 0.3s）
     func startCruise(points: [[Double]], kmh: Double) {
         self.stopTimerOnly()
-        self.stopStuckCheck()  // 停止之前的檢測
+        self.stopStuckCheck()
         self.routeQueue = points
-        guard !self.routeQueue.isEmpty else { 
-            return 
-        }
+        self.routeOriginal = points
+        guard !points.isEmpty else { return }
         
-        // 初始化狀態（使用真實數據的模式）
-        self.currentSpeed = Double.random(in: 15.0...18.0)  // 速度 15-18 km/h（模擬真實騎車）
+        // 建立平滑路徑
+        self.smoothPath = buildSmoothPath(waypoints: points)
+        self.smoothPathIndex = 0
+        
+        // 初始化速度（使用傳入的 kmh，限制 5-20）
+        self.baseSpeedKmh = max(5.0, min(20.0, kmh))
+        self.walkingSpeedKmh = self.baseSpeedKmh
+        self.speedDrift = 0.0
+        self.cruiseStepPhase = 0.0
+        self.gpsNoiseLat = 0.0
+        self.gpsNoiseLon = 0.0
+        self.cruiseLastTick = nil
+        self.cruiseStartTime = Date()
         self.lastUpdateTime = Date()
-        self.pathOffset = 0.0
-        self.altitudeOffset = 0.0
         self.stuckCount = 0
-        self.lastPositions = []  // 清除位置記錄
-        // 初始化海拔高度（模擬台北市區海拔）
-        if self.currentAltitude < 1.0 {
-            self.currentAltitude = Double.random(in: 10.0...25.0)
+        self.lastPositions = []
+        
+        // 判斷是否循環
+        if points.count >= 2 {
+            let first = points[0]
+            let last = points[points.count - 1]
+            let closeDist = haversineMeters(lat1: first[0], lon1: first[1], lat2: last[0], lon2: last[1])
+            self.cruiseLoop = closeDist < 50.0  // 起終點 < 50m 視為循環
+        } else {
+            self.cruiseLoop = false
         }
         
-        // 立即執行第一步移動（不等待計時器）
+        // 啟動 0.3 秒 repeating Timer（cruiseTick）
         DispatchQueue.main.async {
-            // 立即執行第一步，確保開始移動
-            self.executeRealisticStep()
-            // 然後調度後續步驟
-            self.scheduleRealisticStep()
+            self.stopTimerOnly()
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                self?.cruiseTick()
+            }
         }
         
-        // 啟動原地踏步檢測（多點移動也需要檢測）
         startStuckCheck()
     }
     
-    // 真實數據模式的動態調度（改進版：修正計時器管理）
-    private func scheduleRealisticStep() {
-        guard !self.routeQueue.isEmpty else {
-            self.stopTimerOnly()
-            return
-        }
-        
-        // 確保在主線程上執行
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async {
-                self.scheduleRealisticStep()
-            }
-            return
-        }
-        
-        // 先停止舊計時器（避免重複計時器）
-        self.stopTimerOnly()
-        
-        // 優化：固定計時器間隔在 0.5-1 秒之間，確保頻繁的位置更新
-        let baseInterval = 0.75  // 基礎間隔 0.75 秒
-        let variation = Double.random(in: -0.25...0.25)  // ±0.25 秒變化
-        let actualInterval = max(0.5, min(1.0, baseInterval + variation))  // 嚴格限制在 0.5-1.0 秒
-        
-        // 動態調整速度（模擬真實騎車的速度變化，15-18 km/h）
-        let speedVariation = Double.random(in: -1.0...1.0)
-        self.currentSpeed = max(15.0, min(18.0, self.currentSpeed + speedVariation))
-        
-        // 創建計時器（scheduledTimer 已自動添加到 RunLoop）
-        self.timer = Timer.scheduledTimer(withTimeInterval: actualInterval, repeats: false) { [weak self] _ in
-            guard let self = self else { return }
-            self.executeRealisticStep()
-            self.scheduleRealisticStep()  // 遞迴調度下一步
-        }
-    }
-    
-    // 執行真實數據模式的單步移動（改進版：確保位置持續更新）
-    private func executeRealisticStep() {
-        guard !self.routeQueue.isEmpty else {
-            self.stopTimerOnly()
-            return
-        }
-        
-        // 確保在主線程上執行
-        guard Thread.isMainThread else {
-            DispatchQueue.main.async {
-                self.executeRealisticStep()
-            }
-            return
-        }
-        
-        let target = self.routeQueue[0]
-        let dLat = target[0] - self.currentLat
-        let dLon = target[1] - self.currentLon
-        let dist = sqrt(dLat * dLat + dLon * dLon)
-        
-        // 優化：使用固定的時間間隔（0.5-1 秒），確保位置持續更新
-        let timeElapsed = Date().timeIntervalSince(self.lastUpdateTime)
-        let actualInterval = max(0.5, min(1.0, timeElapsed))  // 嚴格限制在 0.5-1.0 秒
-        
-        // 將速度轉換為度數（在緯度 25 度附近，1 度約 111 公里）
-        let latFactor = cos(self.currentLat * .pi / 180.0)
-        let metersPerDegreeLat = 111000.0
-        let metersPerDegreeLon = 111000.0 * latFactor
-        
-        // 計算每步移動距離（公尺）- 使用真實速度 15-18 km/h
-        let stepMeters = (self.currentSpeed / 3.6) * actualInterval
-        
-        // 轉換為度數
-        let stepDistLat = stepMeters / metersPerDegreeLat
-        let stepDistLon = stepMeters / metersPerDegreeLon
-        
-        // 計算總步長（度數）
-        let stepDist = sqrt(stepDistLat * stepDistLat + stepDistLon * stepDistLon)
-        
-        // 改進：降低到達目標點的判斷閾值，確保更精確的移動
-        // 如果距離目標很近（小於步長的 1.2 倍），直接移動到目標點
-        if dist < stepDist * 1.2 {
-            // 直接移動到目標點位置（確保位置實際更新）
-            self.currentLat = target[0]
-            self.currentLon = target[1]
-            
-            // 添加真實 GPS 誤差（±3 公尺，模擬真實 GPS 精度）
-            let gpsErrorLat = Double.random(in: -0.000027...0.000027)  // ±3 公尺
-            let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
-            
-            // 立即發送位置更新（確保位置變化被記錄）
-            self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
-            
-            // 更新時間戳
-            self.lastUpdateTime = Date()
-            
-            // 移除已到達的目標點
-            self.routeQueue.removeFirst()
-            self.pathOffset = 0.0  // 重置路徑偏移
-            
-            // 改進：確保立即繼續移動到下一點，不等待
-            if !self.routeQueue.isEmpty {
-                // 立即調度下一步，不返回（確保連續移動）
-                DispatchQueue.main.async {
-                    self.scheduleRealisticStep()
-                }
-                return
+    // ========== cruiseTick: 每 0.3 秒觸發一次 ==========
+    private func cruiseTick() {
+        // 1. 檢查路徑是否走完
+        if smoothPathIndex >= smoothPath.count {
+            if cruiseLoop {
+                // 循環：重新建立平滑路徑
+                smoothPath = buildSmoothPath(waypoints: routeOriginal, metersPerSegment: 1.5)
+                smoothPathIndex = 0
             } else {
-                // 所有點都走完了，停止
-                self.stopTimerOnly()
+                stopTimerOnly()
                 return
             }
         }
         
-        // 計算移動方向（單位向量）
-        let directionLat = dLat / dist
-        let directionLon = dLon / dist
+        let now = Date()
+        let rawDt = cruiseLastTick.map { now.timeIntervalSince($0) } ?? 0.3
+        let dt = min(rawDt, 1.5)  // ⚠️ 上限 1.5 秒，防止卡頓後跳躍
+        cruiseLastTick = now
         
-        // 使用真實數據的移動模式：較小的搖擺（騎車比走路穩定）
-        self.pathOffset += 0.1  // 較慢的累積，模擬騎車的穩定移動
-        let swingAmount = 0.0000027 * sin(self.pathOffset)  // 約 ±0.3 公尺的搖擺（騎車較穩定）
+        // 2. 速度飄移（高斯隨機漫步）
+        speedDrift += gaussianRandom() * 0.3
+        speedDrift = max(-2.5, min(2.5, speedDrift))
+        walkingSpeedKmh = max(minSpeedKmh, min(maxSpeedKmh, baseSpeedKmh + speedDrift))
         
-        // 計算垂直於移動方向的搖擺方向
-        let perpendicularLat = -directionLon
-        let perpendicularLon = directionLat
+        // 3. 啟動加速（前 3 秒平滑加速，smoothstep）
+        let elapsed = now.timeIntervalSince(cruiseStartTime ?? now)
+        let accelFactor: Double
+        if elapsed < 3.0 {
+            let t = elapsed / 3.0
+            accelFactor = t * t * (3.0 - 2.0 * t)  // smoothstep
+        } else {
+            accelFactor = 1.0
+        }
         
-        // 應用搖擺偏移
-        let swingLat = perpendicularLat * swingAmount
-        let swingLon = perpendicularLon * swingAmount
+        // 4. 計算這 tick 要移動的距離（公尺）
+        let metersPerSec = (walkingSpeedKmh / 3.6) * accelFactor
+        var metersToMove = metersPerSec * dt
         
-        // 計算這一步應該移動的距離（確保不超過目標點）
-        let moveRatio = min(1.0, dist / stepDist)
+        // 5. 沿平滑路徑前進
+        while metersToMove > 0.0 && smoothPathIndex < smoothPath.count {
+            let target = smoothPath[smoothPathIndex]
+            let dist = haversineMeters(lat1: currentLat, lon1: currentLon,
+                                        lat2: target[0], lon2: target[1])
+            
+            if dist <= metersToMove + 0.3 {
+                currentLat = target[0]
+                currentLon = target[1]
+                metersToMove -= dist
+                smoothPathIndex += 1
+            } else {
+                let ratio = metersToMove / dist
+                currentLat += (target[0] - currentLat) * ratio
+                currentLon += (target[1] - currentLon) * ratio
+                metersToMove = 0.0
+            }
+        }
         
-        // 移動到新位置（加上搖擺和 GPS 誤差）
-        let gpsErrorLat = Double.random(in: -0.000027...0.000027)  // ±3 公尺 GPS 誤差
-        let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
+        // 6. 腳步擺動（橫向搖擺 — 模擬真實步行）
+        cruiseStepPhase += 1.8 * dt  // 步頻 1.8 Hz
+        let swayPrimary = sin(cruiseStepPhase * 2.0 * .pi) * 0.18      // 主擺動 ±0.18m
+        let swaySecondary = sin(cruiseStepPhase * 2.3 * 2.0 * .pi) * 0.07  // 次擺動 ±0.07m
+        let totalSwayMeters = swayPrimary + swaySecondary
         
-        self.currentLat += directionLat * stepDistLat * moveRatio + swingLat + gpsErrorLat
-        self.currentLon += directionLon * stepDistLon * moveRatio + swingLon + gpsErrorLon
+        // 計算行進方向
+        let heading: Double
+        if smoothPathIndex < smoothPath.count {
+            heading = atan2(smoothPath[smoothPathIndex][1] - currentLon,
+                            smoothPath[smoothPathIndex][0] - currentLat)
+        } else {
+            heading = 0.0
+        }
+        let perpendicular = heading + .pi / 2.0
+        let latFactor = cos(currentLat * .pi / 180.0)
+        let swayLat = totalSwayMeters * cos(perpendicular) / 111000.0
+        let swayLon = totalSwayMeters * sin(perpendicular) / (111000.0 * latFactor)
         
-        // 模擬海拔高度變化（模擬市區地形，10-25 公尺）
-        self.altitudeOffset += 0.05  // 更慢的累積
-        let terrainVariation = 3.0 * sin(self.altitudeOffset)  // 基礎地形起伏 ±3 公尺
-        let randomVariation = Double.random(in: -2.0...2.0)  // 隨機變化 ±2 公尺
-        let altitudeChange = (terrainVariation + randomVariation) * 0.05  // 每次變化幅度更小
+        // 7. GPS 噪點（高斯分佈 + 指數移動平均）
+        let noiseSigma = 0.000018  // ~2 米
+        let alpha = 0.3
+        gpsNoiseLat = alpha * gaussianRandom() * noiseSigma + (1.0 - alpha) * gpsNoiseLat
+        gpsNoiseLon = alpha * gaussianRandom() * noiseSigma + (1.0 - alpha) * gpsNoiseLon
         
-        // 更新海拔高度（限制在合理範圍內：10-25 公尺，模擬台北市區）
-        self.currentAltitude = max(10.0, min(25.0, self.currentAltitude + altitudeChange))
+        // 8. 最終位置 = 基礎位置 + 擺動 + 噪點
+        let finalLat = currentLat + swayLat + gpsNoiseLat
+        let finalLon = currentLon + swayLon + gpsNoiseLon
+        
+        // 9. 發送到設備
+        transmit(lat: finalLat, lon: finalLon)
+        recordPosition(lat: currentLat, lon: currentLon)
         
         // 更新時間戳
-        self.lastUpdateTime = Date()
-        
-        // 激進改進：確保每次都有明顯的位置變化（強制最小移動距離）
-        // 如果移動距離太小，強制添加更大的最小移動量（至少 0.5 公尺）
-        let minMoveDistance = 0.0000045  // 約 0.5 公尺的最小移動（從 0.11 公尺增加到 0.5 公尺）
-        let actualMoveDist = sqrt((directionLat * stepDistLat * moveRatio) * (directionLat * stepDistLat * moveRatio) + 
-                                  (directionLon * stepDistLon * moveRatio) * (directionLon * stepDistLon * moveRatio))
-        
-        if actualMoveDist < minMoveDistance {
-            // 如果移動距離太小，強制添加最小移動量（確保 iOS 能檢測到移動）
-            self.currentLat += directionLat * minMoveDistance
-            self.currentLon += directionLon * minMoveDistance
-        }
-        
-        // 優化：增加位置變化的隨機性，防止 iOS 認為設備已靜止
-        // 使用多層次的隨機抖動，確保每次更新都有明顯的位置變化
-        let baseJitter = 0.000002  // 基礎抖動約 0.22 公尺
-        let microJitter = 0.000001  // 微小抖動約 0.11 公尺（增加隨機性）
-        
-        // 組合多種隨機抖動
-        let jitterLat1 = Double.random(in: -baseJitter...baseJitter)
-        let jitterLon1 = Double.random(in: -baseJitter...baseJitter) / latFactor
-        let jitterLat2 = Double.random(in: -microJitter...microJitter)
-        let jitterLon2 = Double.random(in: -microJitter...microJitter) / latFactor
-        
-        // 總抖動 = 基礎抖動 + 微小抖動（增加隨機性）
-        let totalJitterLat = jitterLat1 + jitterLat2
-        let totalJitterLon = jitterLon1 + jitterLon2
-        
-        // 發送位置更新（加上多層次 GPS 誤差，增加隨機性）
-        self.transmit(lat: self.currentLat + totalJitterLat, lon: self.currentLon + totalJitterLon)
-        
-        // 記錄位置用於檢測原地踏步（多點移動模式也需要檢測）
-        self.recordPosition(lat: self.currentLat, lon: self.currentLon)
+        self.lastUpdateTime = now
     }
 
     // 發送座標至設備（v2.0 優化版：持久連線 + 腳步擺動 + GPS 噪點）
@@ -1679,36 +1675,25 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
     }
     
-    // 多點移動模式的自動重啟
+    // 多點移動模式的自動重啟（v2.1 - 使用 cruiseTick）
     private func autoRestartRouteMode() {
-        guard !routeQueue.isEmpty else { return }
+        guard !routeOriginal.isEmpty else { return }
         
-        print("🔄 自動重新啟動多點移動...")
+        print("🔄 自動重新啟動散花移動...")
         
         // 停止當前播放
         self.stopTimerOnly()
-        
-        // 清除舊的位置記錄
         self.lastPositions = []
         
-        // 強制發送當前位置（確保位置更新）
-        DispatchQueue.global(qos: .userInteractive).async {
-            // 添加 GPS 誤差
-            let latFactor = cos(self.currentLat * .pi / 180.0)
-            let gpsErrorLat = Double.random(in: -0.000027...0.000027)
-            let gpsErrorLon = Double.random(in: -0.000027...0.000027) / latFactor
-            
-            // 強制發送位置
-            self.transmit(lat: self.currentLat + gpsErrorLat, lon: self.currentLon + gpsErrorLon)
-            
-            // 等待一下確保位置已發送
-            Thread.sleep(forTimeInterval: 0.3)
-            
-            // 繼續移動
-            DispatchQueue.main.async {
-                self.scheduleRealisticStep()
-                print("✅ 已重新啟動多點移動")
+        // 強制發送當前位置
+        transmit(lat: currentLat, lon: currentLon)
+        
+        // 重新啟動 cruiseTick Timer
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                self?.cruiseTick()
             }
+            print("✅ 已重新啟動散花移動")
         }
     }
     
