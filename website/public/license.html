@@ -86,7 +86,7 @@
         }
 
         result.innerHTML = `<span class="ok">授權碼有效</span>（方案：<code>${data.planType || 'unknown'}</code>）`;
-        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260206-v2/ios-location-simulator-mac.dmg';
+        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260207-stable/ios-location-simulator-mac.dmg';
         document.getElementById('winLink').href = data.download?.windows || '/downloads/ios-location-simulator-windows.exe';
         dl.style.display = 'block';
       } catch (e) {
