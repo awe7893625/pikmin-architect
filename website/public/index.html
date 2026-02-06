@@ -1380,7 +1380,7 @@
         // 下載 App
         function downloadApp(platform) {
             const downloadLinks = {
-                'mac': '/downloads/ios-location-simulator-mac.dmg',  // Vercel 靜態檔（已公證 + stapled 的 DMG）
+                'mac': 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260206/ios-location-simulator-mac.dmg',  // GitHub Release（已公證 + stapled 的 DMG）
                 'windows': '/downloads/ios-location-simulator-windows.exe'
             };
             
@@ -1388,7 +1388,7 @@
             if (link) {
                 // 直接下載
                 // 加版本參數避免 CDN/瀏覽器快取到舊檔
-                window.location.href = link + '?v=20260121_2151';
+                window.location.href = link;
             } else {
                 alert(`即將提供 ${platform === 'mac' ? 'macOS' : 'Windows'} 版本下載連結\n\n目前可以聯繫客服獲取下載連結。`);
             }
