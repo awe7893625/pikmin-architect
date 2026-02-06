@@ -111,19 +111,49 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         
         print("📦 [自動安裝] 偵測到缺少 pymobiledevice3，正在自動安裝...")
         DispatchQueue.main.async {
-            self.webView?.evaluateJavaScript("setUI('connecting', ' 首次使用：正在安裝必要套件...')")
+            self.webView?.evaluateJavaScript("setUI('connecting', ' 首次使用：正在安裝必要套件（可能需要1-2分鐘）...')")
         }
         
-        // 嘗試自動安裝（使用 --user 不需要 sudo）
-        let installOut = shell("\"\(pythonPath)\" -m pip install --user --quiet pymobiledevice3 2>&1")
-        
+        // 策略 1: 先嘗試不加 --user 的全局安裝（sudo 環境也能看到）
+        var installOut = shell("\"\(pythonPath)\" -m pip install --quiet pymobiledevice3 2>&1")
         if hasPymobiledevice3(pythonPath) {
-            print("✅ [自動安裝] pymobiledevice3 安裝成功")
+            print("✅ [自動安裝] pymobiledevice3 全局安裝成功")
             pymobiledevice3Installed = true
-        } else {
-            print("⚠️ [自動安裝] 自動安裝失敗，輸出: \(installOut)")
-            pymobiledevice3Installed = false
+            return
         }
+        print("⚠️ [自動安裝] 全局安裝失敗（可能需要更高權限），輸出: \(installOut)")
+        
+        // 策略 2: 使用 pip3 命令直接安裝（某些系統 pip3 可用但 python3 -m pip 不行）
+        installOut = shell("pip3 install --quiet pymobiledevice3 2>&1")
+        if hasPymobiledevice3(pythonPath) {
+            print("✅ [自動安裝] pymobiledevice3 通過 pip3 安裝成功")
+            pymobiledevice3Installed = true
+            return
+        }
+        print("⚠️ [自動安裝] pip3 安裝失敗，輸出: \(installOut)")
+
+        // 策略 3: 使用 --user 安裝（舊的方式，作為最後備選）
+        installOut = shell("\"\(pythonPath)\" -m pip install --user --quiet pymobiledevice3 2>&1")
+        if hasPymobiledevice3(pythonPath) {
+            print("✅ [自動安裝] pymobiledevice3 --user 安裝成功")
+            pymobiledevice3Installed = true
+            return
+        }
+        
+        // 策略 4: 嘗試先安裝/升級 pip 本身，然後再裝 pymobiledevice3
+        print("⚠️ [自動安裝] 嘗試先安裝 pip...")
+        _ = shell("\"\(pythonPath)\" -m ensurepip --upgrade 2>&1")
+        _ = shell("\"\(pythonPath)\" -m pip install --upgrade pip 2>&1")
+        installOut = shell("\"\(pythonPath)\" -m pip install pymobiledevice3 2>&1")
+        if hasPymobiledevice3(pythonPath) {
+            print("✅ [自動安裝] pymobiledevice3 安裝成功（先修復 pip 後）")
+            pymobiledevice3Installed = true
+            return
+        }
+        
+        print("⚠️ [自動安裝] 所有非 sudo 安裝方式都失敗，將在啟動隧道時以 sudo 安裝")
+        print("⚠️ [自動安裝] 最後輸出: \(installOut)")
+        pymobiledevice3Installed = false
     }
     
     private func resolvePythonPath() -> String {
@@ -898,8 +928,23 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 // 使用 osascript 一次性執行所有步驟（只需輸入一次密碼）
                 // 使用 sudo -v 延長密碼緩存時間（5分鐘）
                 let pythonCmd = self.escapeForAppleScript(self.pythonCommand("-m pymobiledevice3 remote tunneld"))
+                
+                // 如果 pymobiledevice3 尚未安裝，在 sudo 環境中先安裝
+                var installPrefix = ""
+                if !self.pymobiledevice3Installed {
+                    print("📦 [隧道] pymobiledevice3 尚未安裝，將在 sudo 環境中自動安裝...")
+                    DispatchQueue.main.async {
+                        self.webView?.evaluateJavaScript("setUI('connecting', ' 首次使用：正在以管理員權限安裝必要套件（約1-2分鐘）...')")
+                    }
+                    // 在 sudo（with administrator privileges）環境下先安裝 pymobiledevice3，再啟動隧道
+                    let installCmd1 = self.escapeForAppleScript(self.pythonCommand("-m ensurepip --upgrade"))
+                    let installCmd2 = self.escapeForAppleScript(self.pythonCommand("-m pip install --upgrade pip"))
+                    let installCmd3 = self.escapeForAppleScript(self.pythonCommand("-m pip install pymobiledevice3"))
+                    installPrefix = "\(installCmd1) 2>/dev/null; \(installCmd2) 2>/dev/null; \(installCmd3) 2>/dev/null; "
+                }
+                
                 let combinedScript = """
-                do shell script "sudo -v && sudo killall -9 pymobiledevice3 2>/dev/null; sudo lsof -i tcp:49151 -t 2>/dev/null | xargs -r sudo kill -9 2>/dev/null; sleep 2; sudo rm -f /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo touch /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo chmod 666 /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo \(pythonCmd) > /tmp/pymobiledevice3_tunnel.log 2>&1 &" with administrator privileges
+                do shell script "sudo -v && sudo killall -9 pymobiledevice3 2>/dev/null; sudo lsof -i tcp:49151 -t 2>/dev/null | xargs -r sudo kill -9 2>/dev/null; sleep 2; sudo rm -f /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo touch /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo chmod 666 /tmp/pymobiledevice3_tunnel.log 2>/dev/null; \(installPrefix)sudo \(pythonCmd) > /tmp/pymobiledevice3_tunnel.log 2>&1 &" with administrator privileges
                 """
                 
                 let p = Process()
@@ -920,12 +965,13 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     return
                 }
                 
-                // 等待一下讓進程啟動
-                Thread.sleep(forTimeInterval: 2.5)
+                // 等待一下讓進程啟動（如果需要安裝套件，給更多時間）
+                let initialWait: TimeInterval = self.pymobiledevice3Installed ? 2.5 : 5.0
+                Thread.sleep(forTimeInterval: initialWait)
                 
-                // 優化：使用輪詢檢查，最多等待 30 秒（舊筆電可能需要更長時間），每 0.5 秒檢查一次
+                // 優化：使用輪詢檢查，如果需要安裝套件則最多等待 180 秒，否則 30 秒
                 var tunnelStarted = false
-                let maxAttempts = 60  // 30 秒 / 0.5 秒 = 60 次（增加超時時間以支援舊筆電）
+                let maxAttempts = self.pymobiledevice3Installed ? 60 : 360  // 30秒 或 180秒
                 var attempts = 0
                 var lastError: String = ""
                 
@@ -1050,11 +1096,16 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         errorMsg += "3. 已點擊「信任此電腦」\n"
                     } else if lastError.contains("No module named pymobiledevice3") || lastError.contains("No module named 'pymobiledevice3'") {
                         errorMsg += "❌ 缺少 pymobiledevice3 模組\n\n"
-                        errorMsg += "請在終端機執行以下指令安裝：\n"
+                        errorMsg += "自動安裝未成功，請手動安裝：\n\n"
+                        errorMsg += "方法 1（推薦）：在終端機執行：\n"
+                        errorMsg += "sudo pip3 install pymobiledevice3\n\n"
+                        errorMsg += "方法 2：如果上述失敗，先安裝 pip：\n"
+                        errorMsg += "sudo python3 -m ensurepip --upgrade\n"
+                        errorMsg += "sudo python3 -m pip install pymobiledevice3\n\n"
+                        errorMsg += "方法 3：使用 brew 安裝 Python 和套件：\n"
+                        errorMsg += "brew install python3\n"
                         errorMsg += "pip3 install pymobiledevice3\n\n"
-                        errorMsg += "或使用 brew 安裝：\n"
-                        errorMsg += "brew install --cask pymobiledevice3\n\n"
-                        errorMsg += "安裝完成後，重新啟動 App 並點擊「初始化連線」\n"
+                        errorMsg += "安裝完成後，重新點擊「GO」即可\n"
                     } else if !lastError.isEmpty {
                         let errorPreview = String(lastError.prefix(300))
                         errorMsg += "錯誤訊息：\n\(errorPreview)\n\n"
