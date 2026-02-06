@@ -126,6 +126,7 @@
 </head>
 <body>
     <div id="map"></div>
+    <button id="follow-btn" onclick="toggleFollow()" title="跟隨位置" style="position:fixed;bottom:30px;left:30px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--glass);backdrop-filter:blur(20px);box-shadow:0 4px 15px rgba(0,0,0,0.15);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:22px;color:#999;transition:color 0.2s;">&#9678;</button>
     <div class="glass-panel" onclick="event.stopPropagation()">
         <div class="island" onclick="reconnect()">
             <span id="st-text" data-i18n="initConnection"> 點擊初始化連線</span>
@@ -148,6 +149,19 @@
         <div class="action-row">
             <button class="btn-action btn-go" onclick="run()" data-i18n="go">GO</button>
             <button class="btn-action btn-stop" onclick="stopAll()" data-i18n="stop">STOP</button>
+        </div>
+        <div id="route-settings" style="display:none; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <span style="font-size:13px; font-weight:700; color:#333;">時速</span>
+                <span id="speed-value" style="font-size:13px; font-weight:600; color:var(--apple-blue);">16.0 km/h</span>
+            </div>
+            <input type="range" id="speed-slider" min="5" max="20" step="0.5" value="16"
+                   style="width:100%; margin-bottom:10px; accent-color:var(--apple-blue);"
+                   oninput="document.getElementById('speed-value').textContent = parseFloat(this.value).toFixed(1) + ' km/h'">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" id="loop-checkbox" checked style="accent-color:var(--apple-blue);">
+                <label for="loop-checkbox" style="font-size:13px; font-weight:600; color:#333;">循環路線</label>
+            </div>
         </div>
         <div id="fav-ui" style="display:none; margin-bottom:12px;">
             <button onclick="openModal()" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:12px; font-weight:700; margin-bottom:8px;" data-i18n="addCurrentLocation">＋ 加入目前位置</button>
@@ -325,6 +339,8 @@
             const tabMap = {'tp':'t1', 'route':'t2', 'fav':'t3'};
             document.getElementById(tabMap[m]).classList.add('active');
             document.getElementById('fav-ui').style.display = (m==='fav')?'block':'none';
+            var routeSettings = document.getElementById('route-settings');
+            if (routeSettings) routeSettings.style.display = (m === 'route') ? 'block' : 'none';
             renderList();
         }
         
@@ -1199,7 +1215,12 @@
                 window.webkit.messageHandlers.bridge.postMessage({ act: 'tp', la: pendingCoord.la, lo: pendingCoord.lo });
                 targetMarker.remove();
             } else if (feature === 'route' && routePoints.length > 1) {
-                window.webkit.messageHandlers.bridge.postMessage({ act: 'startRoute', pts: routePoints });
+                var speedSlider = document.getElementById('speed-slider');
+                var loopCheckbox = document.getElementById('loop-checkbox');
+                var kmh = speedSlider ? parseFloat(speedSlider.value) : 16.0;
+                var loop = loopCheckbox ? loopCheckbox.checked : true;
+                window.webkit.messageHandlers.bridge.postMessage({ act: 'startRoute', pts: routePoints, kmh: kmh, loop: loop });
+                targetMarker.remove();
             }
         }
         
@@ -1370,9 +1391,47 @@
         function stopAll() {
             window.webkit.messageHandlers.bridge.postMessage({ act: 'stop' });
             routePoints=[]; pathLine.setLatLngs([]); targetMarker.remove();
+            isWalking = false; followMode = false; updateFollowBtn();
         }
 
-        function syncLocation(la, lo) { pikmin.setLatLng([la, lo]); }
+        // ========== 走路跟隨模式 ==========
+        var followMode = false;
+        var isWalking = false;
+
+        map.on('dragstart', function() {
+            if (followMode) { followMode = false; updateFollowBtn(); }
+        });
+
+        function updateFollowBtn() {
+            var btn = document.getElementById('follow-btn');
+            if (!btn) return;
+            btn.style.display = isWalking ? 'flex' : 'none';
+            if (followMode) { btn.classList.add('active'); btn.style.color = 'var(--apple-blue)'; }
+            else { btn.classList.remove('active'); btn.style.color = '#999'; }
+        }
+
+        window.toggleFollow = function() {
+            followMode = !followMode;
+            updateFollowBtn();
+            if (followMode) { map.panTo(pikmin.getLatLng(), { animate: true }); }
+        };
+
+        window.syncLocation = function(la, lo) {
+            pikmin.setLatLng([la, lo]);
+            if (followMode) {
+                if (!window._syncCount) window._syncCount = 0;
+                window._syncCount++;
+                if (window._syncCount % 3 === 0) { map.panTo([la, lo], { animate: true }); }
+            }
+        };
+
+        window.setFollowMode = function(enabled) {
+            followMode = enabled;
+            isWalking = enabled;
+            updateFollowBtn();
+        };
+        // ========== 走路跟隨模式結束 ==========
+
         function reconnect() { window.webkit.messageHandlers.bridge.postMessage({ act: 'reconnect' }); }
         function openModal() {
             pendingCoord = { la: pikmin.getLatLng().lat, lo: pikmin.getLatLng().lng };
