@@ -445,7 +445,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private func startTunnelWatchdog() {
         stopTunnelWatchdog()
         tunnelWasRunning = true
-        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.checkTunnelHealth()
         }
         if let t = tunnelWatchdogTimer { RunLoop.current.add(t, forMode: .common) }
@@ -459,8 +459,14 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private func checkTunnelHealth() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self = self else { return }
+
             let alive = self.isTunnelRunning()
+
             if alive {
+                if !self.tunnelWasRunning {
+                    self.tunnelWasRunning = true
+                }
+                // 隧道活著但 helper 死了 → 只重啟 helper
                 if !self.helperReady {
                     let canRestart: Bool
                     if let last = self.lastHelperRestart { canRestart = Date().timeIntervalSince(last) > 15.0 }
@@ -473,13 +479,45 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         }
                     }
                 }
-            } else {
-                if self.tunnelWasRunning {
-                    self.tunnelWasRunning = false
-                    DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("setUI('error', '隧道已斷線，請點擊初始化連線')")
-                    }
+                return
+            }
+
+            // 隧道死了 → 嘗試用快取 sudo 自動重啟（對齊穩定版）
+            if self.tunnelWasRunning {
+                self.tunnelWasRunning = false
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('error', '隧道已斷線，正在自動重啟...')")
                 }
+            }
+
+            let restartCmd = "sudo -n bash -c 'rm -f /tmp/pymobiledevice3_tunnel.log; touch /tmp/pymobiledevice3_tunnel.log; chmod 666 /tmp/pymobiledevice3_tunnel.log; \(self.resolvePythonPath()) -m pymobiledevice3 remote tunneld > /tmp/pymobiledevice3_tunnel.log 2>&1 &' 2>/dev/null"
+            _ = self.shell(restartCmd)
+
+            for attempt in 1...8 {
+                usleep(1_000_000)
+                if self.isTunnelRunning() {
+                    self.tunnelWasRunning = true
+                    Thread.sleep(forTimeInterval: 3.0)
+                    self.lastHelperRestart = Date()
+                    self.helperQueue.async {
+                        self.startHelper()
+                        if self.helperReady {
+                            self.blastCurrentPosition()
+                            DispatchQueue.main.async {
+                                self.webView?.evaluateJavaScript("setUI('online', '已連線（自動恢復）')")
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                self.webView?.evaluateJavaScript("setUI('error', '隧道已恢復但連線失敗，請手動重連')")
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+
+            DispatchQueue.main.async {
+                self.webView?.evaluateJavaScript("setUI('error', '隧道已斷線，請點擊初始化連線')")
             }
         }
     }

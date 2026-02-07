@@ -9,7 +9,7 @@
   "paymentSelectPlanFirst": "請選擇一個方案",
   "paymentReadBeforeBuy": "購買前請先閱讀（重要）",
   "bindingRuleTitle": "授權綁定規則",
-  "bindingRuleBody": "授權碼為一次性使用，啟用後將綁定單一設備（deviceId）。目前政策：換機 / 重灌不提供自動轉移，如需協助請聯絡客服處理重置（awe7893625@gmail.com）。",
+  "bindingRuleBody": "授權碼為一次性使用，啟用後將綁定單一設備（deviceId）。目前政策：換機 / 重灌不提供自動轉移，如需協助請透過網站聯絡客服處理重置。",
   "failClosedTitle": "離線/伺服器不可用行為（Fail Closed）",
   "failClosedBody": "當授權服務暫不可用時，App 會顯示原因並鎖住需要授權的功能，請稍後再試或重新檢查授權狀態。",
   "windowsStatusTitle": "Windows 版本狀態",

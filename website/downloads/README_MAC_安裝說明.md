@@ -65,4 +65,4 @@ xattr -cr ~/Downloads/KongGoo.app
 
 ## 需要幫助？
 
-如果以上方法都無法解決，請聯繫：awe7893625@gmail.com
+如果以上方法都無法解決，請透過官網底部「聯絡客服」與我們聯繫。
