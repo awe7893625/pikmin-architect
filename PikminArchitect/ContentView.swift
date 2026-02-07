@@ -60,6 +60,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     // Tunnel Watchdog
     private var tunnelWatchdogTimer: Timer?
     private var tunnelWasRunning: Bool = false
+    private var tunnelConsecutiveFailures: Int = 0  // 連續偵測失敗次數（需 2 次才判定斷線）
+    private var helperPingTimer: Timer?  // PING 心跳計時器
     
     // 腳步擺動相關
     private var cruiseStepPhase: Double = 0.0
@@ -445,15 +447,41 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private func startTunnelWatchdog() {
         stopTunnelWatchdog()
         tunnelWasRunning = true
-        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
+        tunnelConsecutiveFailures = 0
+        // 15 秒間隔（匹配穩定版，減少誤判）
+        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
             self?.checkTunnelHealth()
         }
         if let t = tunnelWatchdogTimer { RunLoop.current.add(t, forMode: .common) }
+
+        // PING 心跳：每 30 秒向 helper 發送 PING，主動監測健康
+        helperPingTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.sendHelperPing()
+        }
+        if let t = helperPingTimer { RunLoop.current.add(t, forMode: .common) }
     }
 
     private func stopTunnelWatchdog() {
         tunnelWatchdogTimer?.invalidate()
         tunnelWatchdogTimer = nil
+        helperPingTimer?.invalidate()
+        helperPingTimer = nil
+    }
+
+    /// 發送 PING 到 helper，確認 helper<->tunnel 整條鏈路健康
+    private func sendHelperPing() {
+        guard helperReady else { return }
+        helperQueue.async { [weak self] in
+            guard let self = self,
+                  let stdin = self.helperStdinPipe?.fileHandleForWriting,
+                  let data = "PING\n".data(using: .utf8) else { return }
+            do {
+                try stdin.write(contentsOf: data)
+            } catch {
+                // PING 寫入失敗，helper 已死
+                self.helperReady = false
+            }
+        }
     }
 
     private func checkTunnelHealth() {
@@ -463,26 +491,70 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             let alive = self.isTunnelRunning()
 
             if alive {
+                // 隧道活著 → 重置連續失敗計數
+                self.tunnelConsecutiveFailures = 0
+
                 if !self.tunnelWasRunning {
                     self.tunnelWasRunning = true
+                    print("[Watchdog] 隧道已恢復")
                 }
+
                 // 隧道活著但 helper 死了 → 只重啟 helper
                 if !self.helperReady {
                     let canRestart: Bool
                     if let last = self.lastHelperRestart { canRestart = Date().timeIntervalSince(last) > 15.0 }
                     else { canRestart = true }
                     if canRestart {
+                        print("[Watchdog] 隧道活著但 helper 掛了，重啟 helper")
                         self.lastHelperRestart = Date()
                         self.helperQueue.async {
                             self.startHelper()
-                            if self.helperReady { self.blastCurrentPosition() }
+                            if self.helperReady {
+                                self.blastCurrentPosition()
+                                DispatchQueue.main.async {
+                                    self.webView?.evaluateJavaScript("setUI('online', '已連線（自動恢復）')")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 隧道活著 + helper 活著：額外檢查最後成功發送時間
+                // 如果已經超過 20 秒沒有成功發送，可能 helper 內部連線斷了
+                if self.helperReady, let lastSend = self.lastSuccessfulSend,
+                   Date().timeIntervalSince(lastSend) > 20.0, self.helperSendCount > 5 {
+                    print("[Watchdog] helper ready 但 20s 沒有成功發送，發送 RECONNECT")
+                    self.helperQueue.async {
+                        if let stdin = self.helperStdinPipe?.fileHandleForWriting,
+                           let data = "RECONNECT\n".data(using: .utf8) {
+                            try? stdin.write(contentsOf: data)
                         }
                     }
                 }
                 return
             }
 
-            // 隧道死了 → 嘗試用快取 sudo 自動重啟（對齊穩定版）
+            // ======= 隧道看起來不在了 =======
+            // 但不要急著宣佈死亡！可能只是暫時忙碌
+            self.tunnelConsecutiveFailures += 1
+            print("[Watchdog] 隧道檢測失敗 (\(self.tunnelConsecutiveFailures)/2)")
+
+            // 需要連續 2 次失敗才判定真正斷線（每次間隔 15 秒，共 30 秒）
+            if self.tunnelConsecutiveFailures < 2 {
+                return  // 可能只是暫時性問題，下次再看
+            }
+
+            // 用可靠檢測再確認一次（會重試 3 次，每次間隔 1 秒）
+            if self.isTunnelRunningReliable() {
+                self.tunnelConsecutiveFailures = 0
+                print("[Watchdog] 可靠檢測確認隧道還活著（暫時性誤判）")
+                return
+            }
+
+            // 確認隧道真的死了
+            print("[Watchdog] ⚠️ 確認隧道已死（連續 \(self.tunnelConsecutiveFailures) 次失敗 + 可靠檢測也失敗）")
+            self.tunnelConsecutiveFailures = 0
+
             if self.tunnelWasRunning {
                 self.tunnelWasRunning = false
                 DispatchQueue.main.async {
@@ -490,13 +562,16 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 }
             }
 
+            // 嘗試用快取 sudo 自動重啟
             let restartCmd = "sudo -n bash -c 'rm -f /tmp/pymobiledevice3_tunnel.log; touch /tmp/pymobiledevice3_tunnel.log; chmod 666 /tmp/pymobiledevice3_tunnel.log; \(self.resolvePythonPath()) -m pymobiledevice3 remote tunneld > /tmp/pymobiledevice3_tunnel.log 2>&1 &' 2>/dev/null"
             _ = self.shell(restartCmd)
 
-            for attempt in 1...8 {
+            for attempt in 1...10 {
                 usleep(1_000_000)
                 if self.isTunnelRunning() {
                     self.tunnelWasRunning = true
+                    print("[Watchdog] 隧道自動重啟成功（第 \(attempt) 秒）")
+                    // 多等幾秒讓隧道穩定
                     Thread.sleep(forTimeInterval: 3.0)
                     self.lastHelperRestart = Date()
                     self.helperQueue.async {
@@ -523,10 +598,24 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     }
 
     private func isTunnelRunning() -> Bool {
+        // Method 1: HTTP check (most reliable)
         let httpCheck = shell("curl -s -m 2 -o /dev/null -w '%{http_code}' http://127.0.0.1:49151 2>/dev/null")
         if httpCheck.trimmingCharacters(in: .whitespacesAndNewlines) == "200" { return true }
+        // Method 2: Process check (backup — tunnel might be slow to respond)
         let processCheck = shell("ps aux | grep 'pymobiledevice3.*remote.*tunneld' | grep -v grep | grep -v 'listen-port'")
-        return !processCheck.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if !processCheck.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return false
+    }
+
+    /// 更可靠的隧道健康檢測：重試 2 次，防止暫時性誤判
+    private func isTunnelRunningReliable() -> Bool {
+        if isTunnelRunning() { return true }
+        // 第一次失敗可能只是暫時忙碌，等 1 秒再試
+        usleep(1_000_000)
+        if isTunnelRunning() { return true }
+        // 第二次也失敗，再等 1 秒最後一試
+        usleep(1_000_000)
+        return isTunnelRunning()
     }
     
     /// 高斯隨機數生成器（Box-Muller 轉換）
@@ -1144,335 +1233,226 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
     }
 
-    // 核心連線邏輯 (彈出密碼要求) - 改進版：完整清除所有進程和端口
+    // 核心連線邏輯 - 非破壞性版本：不殺已運行的隧道
     func reconnect() {
-        // 更新 UI 狀態
-        DispatchQueue.main.async { self.webView?.evaluateJavaScript("setUI('connecting', ' 正在清除舊連線...')") }
-        
+        // 先停止 helper（但不碰隧道！）
+        stopHelper()
+        let selectedUDID = effectiveUDID()
+        print("[reconnect] 使用者選擇的 UDID: \(selectedUDID)")
+
+        DispatchQueue.main.async {
+            self.webView?.evaluateJavaScript("setUI('connecting', '正在連線...')")
+        }
+
         DispatchQueue.global(qos: .userInitiated).async {
-            // 步驟 1: 強制結束所有相關進程（解決「不連動」問題）
-            _ = self.shell("sudo killall -9 pymobiledevice3 2>/dev/null")
-            
-            // 等待一下讓進程完全結束
-            Thread.sleep(forTimeInterval: 0.5)
-            
-            // 步驟 2: 清除端口佔用 (Port 49151) - 有時候進程關閉了但端口還被鎖定
-            _ = self.shell("sudo lsof -i tcp:49151 -t | xargs sudo kill -9 2>/dev/null")
-            
-            // 再等待一下確保端口釋放
-            Thread.sleep(forTimeInterval: 0.5)
-            
-            // 更新 UI 狀態
-            DispatchQueue.main.async { self.webView?.evaluateJavaScript("setUI('connecting', ' 正在請求權限...')") }
-            
-            // 步驟 3: 檢測設備並重新啟動隧道（改進版 - 支援 macOS 26.2）
-            print("🔍 [設備偵測] 開始檢測設備...")
-            
+            // ===== 步驟 1: 偵測設備 =====
             var deviceId: String? = nil
-            var matchedPattern: String? = nil
-            
-            // 方法 1: 使用 libimobiledevice（主要方法 - macOS 26.2 推薦）
-            print("📱 [設備偵測] 嘗試使用 libimobiledevice 檢測...")
-            let ideviceOutput: String
+
+            // 方法 1: libimobiledevice
             if let idevice = self.ideviceIdPath {
                 let env = self.envPrefixForShell(pythonPath: self.resolvePythonPath())
                 let cmd = env.isEmpty ? "\"\(idevice)\" -l 2>&1" : "\(env) \"\(idevice)\" -l 2>&1"
-                ideviceOutput = self.shell(cmd)
-            } else {
-                ideviceOutput = ""
-            }
-            print("📱 [設備偵測] idevice_id 輸出: \(ideviceOutput)")
-            
-            if !ideviceOutput.isEmpty && !ideviceOutput.contains("No device found") && !ideviceOutput.contains("error") {
-                // 提取第一個 UDID（可能有多個設備）
-                let udids = ideviceOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
-                if let firstUDID = udids.first, !firstUDID.isEmpty {
-                    var id = firstUDID.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // 確保格式正確（添加連字符如果沒有）
-                    if id.count == 24 && !id.contains("-") {
-                        id.insert("-", at: id.index(id.startIndex, offsetBy: 8))
+                let ideviceOutput = self.shell(cmd)
+                if !ideviceOutput.isEmpty && !ideviceOutput.contains("No device found") && !ideviceOutput.contains("error") {
+                    let udids = ideviceOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "\n")
+                    if let firstUDID = udids.first, !firstUDID.isEmpty {
+                        var id = firstUDID.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if id.count == 24 && !id.contains("-") {
+                            id.insert("-", at: id.index(id.startIndex, offsetBy: 8))
+                        }
+                        deviceId = id
+                        print("[reconnect] libimobiledevice 找到設備: \(id)")
                     }
-                    deviceId = id
-                    matchedPattern = "libimobiledevice"
-                    print("✅ [設備偵測] libimobiledevice 找到設備 ID: \(id)")
                 }
             }
-            
-            // 方法 2: 使用 system_profiler（備用方法 - 如果 libimobiledevice 失敗）
+
+            // 方法 2: system_profiler（備用）
             if deviceId == nil {
-                print("📋 [設備偵測] libimobiledevice 未找到設備，嘗試 system_profiler...")
                 let info = self.shell("/usr/sbin/system_profiler SPUSBDataType")
-                print("📋 [設備偵測] USB 設備資訊長度: \(info.count) 字元")
-                
-                // 嘗試多種正則表達式模式來匹配序列號（支援 macOS 26.2 可能的格式變更）
                 let patterns = [
                     "Serial Number:\\s*([0-9A-Z]{24})",
                     "Serial Number:\\s*([0-9A-Z-]{16,})",
-                    "Serial Number:\\s*([0-9A-Z]{8}-[0-9A-Z]{16})",
-                    "Serial Number: ([0-9A-Z]{24})",
-                    "Serial Number: ([0-9A-Z-]{16,})",
-                    "Serial Number: ([0-9A-Z]{8}-[0-9A-Z]{16})",
-                    "Product ID:.*Serial Number:\\s*([0-9A-Z-]{16,})"
+                    "Serial Number:\\s*([0-9A-Z]{8}-[0-9A-Z]{16})"
                 ]
-                
-                // 從 system_profiler 結果中查找
                 for pattern in patterns {
                     if let regex = try? NSRegularExpression(pattern: pattern, options: []),
                        let match = regex.firstMatch(in: info, options: [], range: NSRange(location: 0, length: info.utf16.count)) {
-                        let ns = info as NSString
-                        var id = ns.substring(with: match.range(at: 1))
-                        print("✅ [設備偵測] 找到設備 ID (模式: \(pattern)): \(id)")
-                        
+                        var id = (info as NSString).substring(with: match.range(at: 1))
                         if id.count == 24 && !id.contains("-") {
                             id.insert("-", at: id.index(id.startIndex, offsetBy: 8))
-                            print("✅ [設備偵測] 格式化後的設備 ID: \(id)")
                         }
-                        
                         deviceId = id
-                        matchedPattern = pattern
+                        print("[reconnect] system_profiler 找到設備: \(id)")
                         break
                     }
                 }
             }
-            
-            if let id = deviceId {
-                print("✅ [設備偵測] 成功找到設備 ID: \(id) (使用模式: \(matchedPattern ?? "unknown"))")
+
+            guard let id = deviceId else {
                 DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('error', '未偵測到 iOS 設備\\n\\n請確認：\\n1. iPhone/iPad 已用 USB 線連接\\n2. 設備已解鎖\\n3. 已點擊「信任此電腦」')")
+                }
+                return
+            }
+
+            DispatchQueue.main.async {
+                if self.preferredUDID.isEmpty {
                     self.udid = id
-                    self.webView?.evaluateJavaScript("setUI('connecting', ' 正在建立隧道...')")
+                    self.preferredUDID = id
+                    UserDefaults.standard.set(id, forKey: self.preferredUDIDKey)
+                }
+            }
+
+            // ===== 步驟 2: 檢查隧道 — 非破壞性！不殺已運行的隧道 =====
+            if self.isTunnelRunning() {
+                print("[reconnect] 隧道已在運行，跳過啟動（不需要密碼）")
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('connecting', '隧道已運行，正在連線...')")
+                }
+            } else {
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('connecting', '正在請求權限...')")
                 }
 
-                print("🔧 [隧道] 正在啟動隧道...")
-                
-                // 使用 osascript 一次性執行所有步驟（只需輸入一次密碼）
-                // 使用 sudo -v 延長密碼緩存時間（5分鐘）
                 let pythonCmd = self.escapeForAppleScript(self.pythonCommand("-m pymobiledevice3 remote tunneld"))
-                
-                // 如果 pymobiledevice3 尚未安裝，在 sudo 環境中先安裝
                 var installPrefix = ""
                 if !self.pymobiledevice3Installed {
-                    print("📦 [隧道] pymobiledevice3 尚未安裝，將在 sudo 環境中自動安裝...")
                     DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("setUI('connecting', ' 首次使用：正在以管理員權限安裝必要套件（約1-2分鐘）...')")
+                        self.webView?.evaluateJavaScript("setUI('connecting', '首次使用：正在安裝必要套件（約1-2分鐘）...')")
                     }
-                    // 在 sudo（with administrator privileges）環境下先安裝 pymobiledevice3，再啟動隧道
                     let installCmd1 = self.escapeForAppleScript(self.pythonCommand("-m ensurepip --upgrade"))
                     let installCmd2 = self.escapeForAppleScript(self.pythonCommand("-m pip install --upgrade pip"))
                     let installCmd3 = self.escapeForAppleScript(self.pythonCommand("-m pip install pymobiledevice3"))
                     installPrefix = "\(installCmd1) 2>/dev/null; \(installCmd2) 2>/dev/null; \(installCmd3) 2>/dev/null; "
                 }
-                
+
+                // 關鍵改動：不再 killall！只在確認沒有隧道時才啟動新的
                 let combinedScript = """
-                do shell script "sudo -v && sudo killall -9 pymobiledevice3 2>/dev/null; sudo lsof -i tcp:49151 -t 2>/dev/null | xargs -r sudo kill -9 2>/dev/null; sleep 2; sudo rm -f /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo touch /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo chmod 666 /tmp/pymobiledevice3_tunnel.log 2>/dev/null; \(installPrefix)sudo \(pythonCmd) > /tmp/pymobiledevice3_tunnel.log 2>&1 &" with administrator privileges
+                do shell script "sudo -v && sudo rm -f /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo touch /tmp/pymobiledevice3_tunnel.log 2>/dev/null; sudo chmod 666 /tmp/pymobiledevice3_tunnel.log 2>/dev/null; \(installPrefix)sudo \(pythonCmd) > /tmp/pymobiledevice3_tunnel.log 2>&1 &" with administrator privileges
                 """
-                
+
                 let p = Process()
                 p.launchPath = "/usr/bin/osascript"
                 p.arguments = ["-e", combinedScript]
-                p.standardOutput = nil
-                p.standardError = nil
-                
+                p.standardOutput = Pipe()
+                p.standardError = Pipe()
+
                 do {
                     try p.run()
-                    // 不等待完成，讓它在後台運行
-                    print("✅ [隧道] osascript 進程已啟動（後台運行，只需輸入一次密碼）")
+                    // 重要：等待 osascript 完成（使用者需要時間輸入密碼）
+                    p.waitUntilExit()
+                    if p.terminationStatus != 0 {
+                        print("[reconnect] osascript 被取消或失敗 (exit \(p.terminationStatus))")
+                        DispatchQueue.main.async {
+                            self.webView?.evaluateJavaScript("setUI('error', '使用者取消或授權失敗')")
+                        }
+                        return
+                    }
+                    print("[reconnect] osascript 完成")
                 } catch {
-                    print("❌ [隧道] 無法啟動 osascript: \(error.localizedDescription)")
                     DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("setUI('error', '⚠️ 無法啟動隧道進程\\n\\n錯誤: \(error.localizedDescription)')")
+                        self.webView?.evaluateJavaScript("setUI('error', '無法啟動隧道進程')")
                     }
                     return
                 }
-                
-                // 等待一下讓進程啟動（如果需要安裝套件，給更多時間）
-                let initialWait: TimeInterval = self.pymobiledevice3Installed ? 2.5 : 5.0
-                Thread.sleep(forTimeInterval: initialWait)
-                
-                // 優化：使用輪詢檢查，如果需要安裝套件則最多等待 180 秒，否則 30 秒
-                var tunnelStarted = false
-                let maxAttempts = self.pymobiledevice3Installed ? 60 : 360  // 30秒 或 180秒
-                var attempts = 0
-                var lastError: String = ""
-                
-                while attempts < maxAttempts && !tunnelStarted {
-                    Thread.sleep(forTimeInterval: 0.5)  // 增加檢查間隔，減少 CPU 使用
-                    attempts += 1
-                    
-                    // 檢查進程是否在運行（最可靠的方法）
-                    let processCheck = self.shell("ps aux | grep 'pymobiledevice3.*tunneld' | grep -v grep")
-                    let processRunning = !processCheck.isEmpty
-                    
-                    // 檢查端口（使用多種方法確保檢測到）
-                    let tunnelCheck = self.shell("lsof -i tcp:49151 2>/dev/null | grep LISTEN")
-                    let portCheck = self.shell("lsof -i tcp:49151 2>/dev/null")
-                    
-                    // 檢查日誌檔案中是否有成功標誌
-                    var logSuccess = false
-                    let logContent = self.shell("cat /tmp/pymobiledevice3_tunnel.log 2>/dev/null")
-                    if !logContent.isEmpty {
-                        let hasUvicornRunning = logContent.contains("Uvicorn running on http://127.0.0.1:49151")
-                        let hasCreatedTunnel = logContent.contains("Created tunnel")
-                        let hasAppStartup = logContent.contains("Application startup complete")
-                        
-                        // 如果日誌中有明確的成功標誌，認為已啟動
-                        if hasUvicornRunning || hasCreatedTunnel || hasAppStartup {
-                            logSuccess = true
-                        }
-                    }
-                    
-                    // 改進的檢測邏輯：優先相信日誌內容
-                    if logSuccess {
-                        tunnelStarted = true
-                        print("✅ [隧道] 隧道已成功啟動（通過日誌確認）")
-                        break
-                    } else if processRunning && (!tunnelCheck.isEmpty || !portCheck.isEmpty) {
-                        tunnelStarted = true
-                        print("✅ [隧道] 隧道已成功啟動（通過端口確認）")
-                        break
-                    } else if processRunning && attempts > 16 {
-                        tunnelStarted = true
-                        print("✅ [隧道] 隧道已成功啟動（進程運行超過 5 秒）")
-                        break
-                    }
-                    
-                    // 如果進程不在運行，檢查是否已退出
-                    if !processRunning && attempts > 8 {
-                        print("⚠️ [隧道] 隧道進程未運行，可能啟動失敗")
-                        if let logContent = try? String(contentsOfFile: "/tmp/pymobiledevice3_tunnel.log", encoding: .utf8) {
-                            print("📋 [隧道] 隧道日誌內容:")
-                            print(logContent)
-                            lastError = logContent
-                        }
-                        break
-                    }
-                }
-                
-                // 步驟 4: 重新獲取裝置列表，並用 pymobiledevice3 的 UDID 更新（確保 simulate-location 格式正確）
-                let devices = self.listConnectedDevices()
-                var pmdUdid: String = ""
-                if let first = devices.first {
-                    pmdUdid = first["UniqueDeviceID"] ?? first["Identifier"] ?? ""
-                }
+
+                // 等待隧道就緒
                 DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('connecting', '等待隧道啟動...')")
+                }
+
+                let maxWait = self.pymobiledevice3Installed ? 20 : 90  // 次數 x 0.5s
+                var tunnelReady = false
+                for i in 0..<maxWait {
+                    Thread.sleep(forTimeInterval: 0.5)
+                    if self.isTunnelRunning() {
+                        tunnelReady = true
+                        print("[reconnect] 隧道就緒（第 \(i) 次檢查）")
+                        break
+                    }
+                    // 也檢查進程和日誌
+                    let processCheck = self.shell("ps aux | grep 'pymobiledevice3.*tunneld' | grep -v grep")
+                    if !processCheck.isEmpty && i > 10 {
+                        // 進程在跑但端口還沒好，多等一下
+                        let logContent = self.shell("cat /tmp/pymobiledevice3_tunnel.log 2>/dev/null")
+                        if logContent.contains("Uvicorn running") || logContent.contains("Created tunnel") || logContent.contains("Application startup") {
+                            tunnelReady = true
+                            break
+                        }
+                    }
+                    if processCheck.isEmpty && i > 8 {
+                        break  // 進程都不在了
+                    }
+                }
+
+                if !tunnelReady {
+                    let lastError = self.shell("cat /tmp/pymobiledevice3_tunnel.log 2>/dev/null")
+                    var errorMsg = "隧道啟動失敗"
+                    if lastError.contains("Address already in use") { errorMsg = "端口 49151 被佔用，請重試" }
+                    else if lastError.contains("No device") { errorMsg = "找不到設備，請確認 USB 連接" }
+                    else if lastError.contains("No module named") { errorMsg = "缺少 pymobiledevice3，請安裝" }
+                    DispatchQueue.main.async {
+                        self.webView?.evaluateJavaScript("setUI('error', '\(errorMsg)')")
+                    }
+                    return
+                }
+
+                // 給隧道時間發現 USB 設備
+                Thread.sleep(forTimeInterval: 2.0)
+            }
+
+            // ===== 步驟 3: 等設備就緒 → 啟動 Helper =====
+            DispatchQueue.main.async {
+                self.webView?.evaluateJavaScript("setUI('connecting', '等待設備連線...')")
+            }
+            Thread.sleep(forTimeInterval: 3.0)
+
+            // 更新裝置列表
+            let devices = self.listConnectedDevices()
+            DispatchQueue.main.async {
+                if let first = devices.first {
+                    let pmdUdid = first["UniqueDeviceID"] ?? first["Identifier"] ?? ""
                     if !pmdUdid.isEmpty {
                         self.udid = pmdUdid
                         if self.preferredUDID.isEmpty {
                             self.preferredUDID = pmdUdid
                             UserDefaults.standard.set(pmdUdid, forKey: self.preferredUDIDKey)
                         }
-                        print("✅ [UDID] 已更新為 pymobiledevice3 格式: \(String(pmdUdid.prefix(12)))...")
-                    }
-                    self.sendDeviceListToWeb(devices)
-                    print("🔄 [裝置列表] 已更新裝置列表（共 \(devices.count) 個裝置）")
-                }
-                
-                // 步驟 5: 驗證 HTTP 連線（必須有 HTTP 200 回應才算真正連線）
-                var httpVerified = false
-                if tunnelStarted {
-                    print("🔍 [連線驗證] 開始驗證 HTTP 連線...")
-                    for _ in 0..<10 {
-                        Thread.sleep(forTimeInterval: 0.5)
-                        let httpCheck = self.shell("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:49151 2>/dev/null || echo '000'")
-                        let statusCode = httpCheck.trimmingCharacters(in: .whitespacesAndNewlines)
-                        print("🔍 [連線驗證] HTTP 狀態碼: \(statusCode)")
-                        if statusCode == "200" {
-                            httpVerified = true
-                            print("✅ [連線驗證] HTTP 連線驗證成功")
-                            break
-                        }
                     }
                 }
-                
-                if tunnelStarted && httpVerified {
-                    DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("setUI('online', ' iPhone 已連線')")
-                    }
-                    
-                    // 啟動 Helper Process + Tunnel Watchdog
-                    DispatchQueue.global(qos: .utility).async {
-                        Thread.sleep(forTimeInterval: 2.0)  // 等隧道穩定
-                        self.startHelper()
-                        Thread.sleep(forTimeInterval: 2.0)
-                        // 如果第一次不成功，重試最多 3 次
-                        var attempts = 0
-                        while !self.helperReady && attempts < 3 {
-                            attempts += 1
-                            self.stopHelper()
-                            Thread.sleep(forTimeInterval: 1.0)
-                            self.startHelper()
-                            Thread.sleep(forTimeInterval: 2.0)
-                        }
-                        DispatchQueue.main.async {
-                            if self.helperReady {
-                                self.startTunnelWatchdog()
-                                print("✅ [連線] Helper + Watchdog 已就緒")
-                            } else {
-                                print("⚠️ [連線] Helper 啟動失敗")
-                            }
-                        }
-                    }
-                } else if tunnelStarted && !httpVerified {
-                    print("⚠️ [連線驗證] 隧道已啟動但 HTTP 連線驗證失敗")
-                    DispatchQueue.main.async {
-                        var errorMsg = "⚠️ 隧道已啟動但無法驗證連線\n\n"
-                        errorMsg += "可能原因：\n"
-                        errorMsg += "1. 設備未正確連接\n"
-                        errorMsg += "2. 設備未解鎖或未信任此電腦\n"
-                        errorMsg += "3. 請確認設備已連接後重新點擊「初始化連線」\n"
-                        self.webView?.evaluateJavaScript("setUI('error', '\(errorMsg)')")
-                    }
-                } else {
-                    print("❌ [隧道] 隧道啟動失敗")
-                    var errorMsg = "⚠️ 隧道啟動失敗\n\n"
-                    
-                    // 分析錯誤原因
-                    if lastError.contains("Address already in use") || lastError.contains("address already in use") || lastError.contains("errno 48") {
-                        errorMsg += "❌ 端口 49151 已被佔用\n\n"
-                        errorMsg += "解決方法：\n"
-                        errorMsg += "1. 在終端機執行：sudo lsof -i tcp:49151 -t | xargs sudo kill -9\n"
-                        errorMsg += "2. 重新點擊「初始化連線」\n"
-                    } else if lastError.contains("No device found") || lastError.contains("device not found") {
-                        errorMsg += "❌ 未找到設備\n\n"
-                        errorMsg += "請確認：\n"
-                        errorMsg += "1. iPhone/iPad 已用 USB 線連接\n"
-                        errorMsg += "2. 設備已解鎖\n"
-                        errorMsg += "3. 已點擊「信任此電腦」\n"
-                    } else if lastError.contains("No module named pymobiledevice3") || lastError.contains("No module named 'pymobiledevice3'") {
-                        errorMsg += "❌ 缺少 pymobiledevice3 模組\n\n"
-                        errorMsg += "自動安裝未成功，請手動安裝：\n\n"
-                        errorMsg += "方法 1（推薦）：在終端機執行：\n"
-                        errorMsg += "sudo pip3 install pymobiledevice3\n\n"
-                        errorMsg += "方法 2：如果上述失敗，先安裝 pip：\n"
-                        errorMsg += "sudo python3 -m ensurepip --upgrade\n"
-                        errorMsg += "sudo python3 -m pip install pymobiledevice3\n\n"
-                        errorMsg += "方法 3：使用 brew 安裝 Python 和套件：\n"
-                        errorMsg += "brew install python3\n"
-                        errorMsg += "pip3 install pymobiledevice3\n\n"
-                        errorMsg += "安裝完成後，重新點擊「GO」即可\n"
-                    } else if !lastError.isEmpty {
-                        let errorPreview = String(lastError.prefix(300))
-                        errorMsg += "錯誤訊息：\n\(errorPreview)\n\n"
-                        if lastError.contains("python") || lastError.contains("Python") {
-                            errorMsg += "\n💡 提示：如果提示缺少 Python 模組，請嘗試：\n"
-                            errorMsg += "pip3 install pymobiledevice3\n"
-                        }
-                    }
-                    
-                    DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("setUI('error', '\(errorMsg)')")
-                    }
-                }
+                self.sendDeviceListToWeb(devices)
+            }
 
-            } else {
-                print("❌ [設備偵測] 未找到設備序列號")
-                var errorMsg = "⚠️ 未偵測到 iOS 設備\n\n"
-                errorMsg += "請確認：\n"
-                errorMsg += "1. iPhone/iPad 已用 USB 線連接\n"
-                errorMsg += "2. 設備已解鎖\n"
-                errorMsg += "3. 已點擊「信任此電腦」\n"
-                
-                DispatchQueue.main.async { 
-                    self.webView?.evaluateJavaScript("setUI('error', '\(errorMsg)')")
+            // 啟動 Helper（最多重試 3 次）
+            self.startHelper()
+            Thread.sleep(forTimeInterval: 2.0)
+
+            var helperAttempts = 0
+            while !self.helperReady && helperAttempts < 3 {
+                helperAttempts += 1
+                print("[reconnect] Helper 未就緒，重試 \(helperAttempts)/3")
+                self.stopHelper()
+                Thread.sleep(forTimeInterval: 1.0)
+                self.startHelper()
+                Thread.sleep(forTimeInterval: 2.0)
+            }
+
+            // HTTP 驗證
+            if self.helperReady {
+                for _ in 0..<4 {
+                    Thread.sleep(forTimeInterval: 0.5)
+                    let httpCheck = self.shell("curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:49151 2>/dev/null || echo '000'")
+                    if httpCheck.trimmingCharacters(in: .whitespacesAndNewlines) == "200" { break }
+                }
+            }
+
+            DispatchQueue.main.async {
+                if self.helperReady {
+                    self.webView?.evaluateJavaScript("setUI('online', '已連線 (\(self.effectiveUDID().suffix(6)))')")
+                    self.startTunnelWatchdog()
+                    print("[reconnect] 連線成功！Helper + Watchdog 已就緒")
+                } else {
+                    self.webView?.evaluateJavaScript("setUI('error', '連線失敗，請重試')")
                 }
             }
         }
