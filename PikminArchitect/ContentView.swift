@@ -114,6 +114,18 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         return "\(bundleResourcesPath)/lib"
     }
 
+    /// 內建 Python 的 site-packages 路徑（自動偵測 lib/python3.x/site-packages）
+    private func bundledSitePackagesPath() -> String? {
+        let libDir = "\(bundledPythonBasePath)/lib"
+        guard let contents = try? FileManager.default.contentsOfDirectory(atPath: libDir) else { return nil }
+        let pythonDirs = contents.filter { $0.hasPrefix("python3.") }
+        for dir in pythonDirs.sorted(by: >) {
+            let sitePackages = "\(libDir)/\(dir)/site-packages"
+            if FileManager.default.fileExists(atPath: sitePackages) { return sitePackages }
+        }
+        return nil
+    }
+
     // 實際可用的 Python（避免「內建 python 存在但跑不起來」造成隧道永遠失敗）
     private var resolvedPythonPath: String?
     private var pymobiledevice3Installed: Bool = false
@@ -187,22 +199,29 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     }
     
     private func resolvePythonPath() -> String {
-        if let cached = resolvedPythonPath, isPythonRunnable(cached) { return cached }
+        if let cached = resolvedPythonPath {
+            // 內建路徑只要存在就繼續用；系統路徑需仍可執行
+            if cached.hasPrefix(bundleResourcesPath) {
+                if FileManager.default.fileExists(atPath: cached) { return cached }
+            } else if isPythonRunnable(cached) {
+                return cached
+            }
+        }
 
-        // 1) 先嘗試 App 內建 Python（若在使用者 OS 上跑不起來就回退）
-        if isPythonRunnable(bundledPythonPath) {
+        // 1) 優先使用 App 內建 Python（完整版 DMG 已含 pymobiledevice3，朋友不需自己安裝）
+        //    只要檔案存在就用，不依賴 shell 檢查（檢查時可能缺 DYLD_LIBRARY_PATH 而誤判）
+        if FileManager.default.fileExists(atPath: bundledPythonPath) {
             resolvedPythonPath = bundledPythonPath
-            // 自動安裝 pymobiledevice3（如果需要）
-            autoInstallPymobiledevice3IfNeeded(bundledPythonPath)
+            // 內建版已打包 pymobiledevice3，跳過自動安裝
+            pymobiledevice3Installed = true
             return bundledPythonPath
         }
 
-        // 2) 回退：Homebrew / 系統 Python
+        // 2) 回退：Homebrew / 系統 Python（需可執行且會嘗試自動安裝 pymobiledevice3）
         let candidates = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3"]
         for c in candidates {
             if isPythonRunnable(c) {
                 resolvedPythonPath = c
-                // 自動安裝 pymobiledevice3（如果需要）
                 autoInstallPymobiledevice3IfNeeded(c)
                 return c
             }
@@ -293,9 +312,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if FileManager.default.fileExists(atPath: bundledBinPath) {
             env["PATH"] = "\(bundledBinPath):\(env["PATH"]!)"
         }
-        // 加入 bundled Python 的 site-packages
-        let sitePackages = "\(bundledPythonBasePath)/lib/python3.9/site-packages"
-        if FileManager.default.fileExists(atPath: sitePackages) {
+        // 加入 bundled Python 的 site-packages（自動偵測 python3.9 / 3.11 / 3.12 等）
+        if let sitePackages = bundledSitePackagesPath(), FileManager.default.fileExists(atPath: sitePackages) {
             env["PYTHONPATH"] = sitePackages
         }
         process.environment = env
@@ -435,7 +453,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if let last = lastAutoReconnect, now.timeIntervalSince(last) < 8.0 { return }
         lastAutoReconnect = now
 
-        helperQueue.async { [weak self] in
+        // 重要：不在 helperQueue 上跑 startHelper，否則會阻塞 12 秒導致 transmit 全部卡住、走路停頓
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             self.startHelper()
             if self.helperReady { self.blastCurrentPosition() }
@@ -507,7 +526,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     if canRestart {
                         print("[Watchdog] 隧道活著但 helper 掛了，重啟 helper")
                         self.lastHelperRestart = Date()
-                        self.helperQueue.async {
+                        DispatchQueue.global(qos: .userInitiated).async {
                             self.startHelper()
                             if self.helperReady {
                                 self.blastCurrentPosition()
@@ -574,7 +593,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     // 多等幾秒讓隧道穩定
                     Thread.sleep(forTimeInterval: 3.0)
                     self.lastHelperRestart = Date()
-                    self.helperQueue.async {
+                    DispatchQueue.global(qos: .userInitiated).async {
                         self.startHelper()
                         if self.helperReady {
                             self.blastCurrentPosition()
@@ -967,22 +986,31 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         print("📍 [瞬移] 準備發送位置: lat=\(lat), lon=\(lon), udid=\(targetUDID)")
         
         // 瞬移使用精確位置，只添加最小的 GPS 誤差（約 ±0.15 公尺）
-        // 不使用多層次抖動，確保精確瞬移
         let jitter = 0.00000135  // 約 ±0.15 公尺（最小誤差）
         let finalLat = lat + Double.random(in: -jitter...jitter)
         let finalLon = lon + Double.random(in: -jitter...jitter)
         
-        // 立即發送位置（使用最高優先級，使用 effectiveUDID）
-        DispatchQueue.global(qos: .userInteractive).async {
-            let targetUDID = self.effectiveUDID()
-            let cmd = self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(targetUDID) -- \(finalLat) \(finalLon)")
-            print("🔧 [瞬移] 執行命令: \(cmd)")
-            let result = self.shell(cmd)
-            if !result.isEmpty {
-                print("📋 [瞬移] 命令輸出: \(result)")
-            } else {
-                print("✅ [瞬移] 命令執行完成（無輸出）")
+        // 優先走持久 helper（與散花一致），不阻塞、不 spawn CLI
+        if helperReady {
+            transmit(lat: finalLat, lon: finalLon)
+            // 瞬移後多送幾次鎖定位置（與 blastCurrentPosition 類似）
+            helperQueue.async { [weak self] in
+                guard let self = self else { return }
+                for _ in 0..<3 {
+                    if let stdin = self.helperStdinPipe?.fileHandleForWriting,
+                       let data = "\(finalLat) \(finalLon)\n".data(using: .utf8) {
+                        try? stdin.write(contentsOf: data)
+                    }
+                    usleep(100_000)
+                }
             }
+            return
+        }
+        
+        // Helper 未就緒時才 fallback 到 CLI（避免主流程卡住）
+        DispatchQueue.global(qos: .userInteractive).async {
+            let cmd = self.pythonCommand("-m pymobiledevice3 developer dvt simulate-location set --tunnel \(self.effectiveUDID()) -- \(finalLat) \(finalLon)")
+            _ = self.shell(cmd)
         }
     }
 
@@ -1727,12 +1755,12 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if let last = lastHelperRestart { canRestart = Date().timeIntervalSince(last) > 15.0 }
         else { canRestart = true }
 
-        // Helper 掛了 → dispatch 到 helperQueue 重啟（不阻塞主線程！）
+        // Helper 掛了 → 用 global 佇列重啟（不可用 helperQueue，否則 startHelper 會阻塞 12s 導致 transmit 全卡住）
         if let process = helperProcess, !process.isRunning {
             print("⚠️ [checkIfStuck] Helper process 已死，排程重啟...")
             if canRestart {
                 lastHelperRestart = Date()
-                helperQueue.async { [weak self] in
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     guard let self = self else { return }
                     self.startHelper()
                     if self.helperReady { self.blastCurrentPosition() }
@@ -1745,7 +1773,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         if !helperReady {
             if canRestart {
                 lastHelperRestart = Date()
-                helperQueue.async { [weak self] in
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     guard let self = self else { return }
                     self.startHelper()
                     if self.helperReady { self.blastCurrentPosition() }
@@ -1764,7 +1792,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 if let lastSend = self.lastSuccessfulSend, Date().timeIntervalSince(lastSend) > 17.0 {
                     if let last = self.lastHelperRestart, Date().timeIntervalSince(last) < 15.0 { return }
                     self.lastHelperRestart = Date()
-                    self.helperQueue.async {
+                    DispatchQueue.global(qos: .userInitiated).async {
                         self.startHelper()
                         if self.helperReady { self.blastCurrentPosition() }
                     }
@@ -1773,7 +1801,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         } else if lastSuccessfulSend == nil && helperSendCount > 10 {
             if canRestart {
                 lastHelperRestart = Date()
-                helperQueue.async { [weak self] in
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     guard let self = self else { return }
                     self.startHelper()
                     if self.helperReady { self.blastCurrentPosition() }
