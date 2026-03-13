@@ -15,19 +15,34 @@ jobs:
           python-version: '3.11'
 
       - name: Build pymobiledevice3.exe with PyInstaller
-        shell: cmd
+        shell: bash
         run: |
           python -m pip install --upgrade pip
           python -m pip install pymobiledevice3 pyinstaller
-          if not exist "Windows版本\bin" mkdir "Windows版本\bin"
-          echo import pymobiledevice3.cli;pymobiledevice3.cli.cli() > _entry.py
-          pyinstaller --onefile --name=pymobiledevice3 --distpath="Windows版本\bin" --collect-all=pymobiledevice3 --hidden-import=pymobiledevice3.cli.developer --hidden-import=pymobiledevice3.cli.developer.dvt --hidden-import=pymobiledevice3.cli.developer.dvt.simulate_location _entry.py
+          mkdir -p "Windows版本/bin"
+          python -c "
+          with open('_entry.py', 'w') as f:
+              f.write('from pymobiledevice3.__main__ import cli\ncli()\n')
+          "
+          cat _entry.py
+          pyinstaller --onefile --name=pymobiledevice3 \
+            --distpath="Windows版本/bin" \
+            --collect-all=pymobiledevice3 \
+            --hidden-import=pymobiledevice3.cli \
+            --hidden-import=pymobiledevice3.lockdown \
+            --hidden-import=pymobiledevice3.services \
+            --hidden-import=pymobiledevice3.services.simulate_location \
+            _entry.py
 
-      - name: Verify pymobiledevice3.exe
-        shell: cmd
+      - name: Verify pymobiledevice3.exe exists
+        shell: bash
         run: |
-          dir Windows版本\bin\pymobiledevice3.exe
-          Windows版本\bin\pymobiledevice3.exe --help || echo "Help check done"
+          ls -lh "Windows版本/bin/pymobiledevice3.exe"
+          if [ ! -f "Windows版本/bin/pymobiledevice3.exe" ]; then
+            echo "ERROR: pymobiledevice3.exe not found!"
+            exit 1
+          fi
+          echo "pymobiledevice3.exe found, size OK"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,9 +50,9 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies and build Electron app
-        shell: cmd
+        shell: bash
         run: |
-          cd Windows版本
+          cd "Windows版本"
           npm ci
           npm run build:win
 
