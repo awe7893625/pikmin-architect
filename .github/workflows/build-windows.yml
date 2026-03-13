@@ -1,0 +1,55 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build pymobiledevice3.exe with PyInstaller
+        shell: cmd
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pymobiledevice3 pyinstaller
+          mkdir Windows版本\bin
+          pyinstaller --onefile --name=pymobiledevice3 --distpath=Windows版本\bin --hidden-import=pymobiledevice3 --hidden-import=pymobiledevice3.cli --hidden-import=pymobiledevice3.cli.developer --hidden-import=pymobiledevice3.cli.developer.dvt --hidden-import=pymobiledevice3.cli.developer.dvt.simulate_location -m pymobiledevice3.cli.developer.dvt.simulate_location
+
+      - name: Verify pymobiledevice3.exe
+        shell: cmd
+        run: |
+          dir Windows版本\bin\pymobiledevice3.exe
+          Windows版本\bin\pymobiledevice3.exe --help || echo "Help check done"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies and build Electron app
+        shell: cmd
+        run: |
+          cd Windows版本
+          npm ci
+          npm run build:win
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: konggoo-windows-installer
+          path: Windows版本/dist/Pikmin Architect Setup 1.0.0.exe
+
+      - name: Upload to Release
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload v20260215-reveal "Windows版本/dist/Pikmin Architect Setup 1.0.0.exe" --clobber --repo ${{ github.repository }} || echo "Upload attempted"
