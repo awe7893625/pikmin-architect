@@ -22,9 +22,9 @@ class AuthManager {
         const execAsync = promisify(exec);
 
         try {
-            // Windows 設備 ID：使用機器 UUID
-            const { stdout } = await execAsync('wmic csproduct get uuid');
-            const uuid = stdout.split('\n')[1].trim();
+            // Windows 設備 ID：使用機器 UUID（PowerShell，相容 Win10/11）
+            const { stdout } = await execAsync('powershell -Command "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID"');
+            const uuid = stdout.trim();
             this.deviceId = 'windows-' + uuid;
         } catch (error) {
             // 備用方案：使用機器名稱
