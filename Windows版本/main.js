@@ -10,15 +10,15 @@ let locationEngine = new LocationEngine();
 let authManager = new AuthManager();
 let dependencyInstaller = new DependencyInstaller();
 
-// 初始化授權管理器
-authManager.registerDevice().then(() => {
-    console.log('設備註冊成功');
-}).catch(err => {
-    console.error('設備註冊失敗:', err);
-});
-
-// App 啟動時檢查依賴
+// App 啟動時初始化授權 + 檢查依賴
 app.whenReady().then(async () => {
+    // 初始化授權管理器
+    authManager.registerDevice().then(() => {
+        console.log('設備註冊成功');
+    }).catch(err => {
+        console.error('設備註冊失敗:', err);
+    });
+
     // 檢查並安裝依賴（在背景執行，不阻塞 UI）
     dependencyInstaller.checkAndInstall().then(result => {
         if (!result.success) {

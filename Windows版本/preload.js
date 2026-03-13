@@ -30,28 +30,28 @@ contextBridge.exposeInMainWorld('webkit', {
                 
                 switch (act) {
                     case 'tp':
-                        electronAPI.teleport(data.la, data.lo);
+                        ipcRenderer.invoke('teleport', data.la, data.lo);
                         break;
                     case 'startRoute':
-                        electronAPI.startRoute(data.pts);
+                        ipcRenderer.invoke('startRoute', data.pts);
                         break;
                     case 'stop':
-                        electronAPI.stop();
+                        ipcRenderer.invoke('stop');
                         break;
                     case 'reconnect':
-                        electronAPI.reconnect();
+                        ipcRenderer.invoke('reconnect');
                         break;
                     case 'checkAuth':
-                        electronAPI.checkAuth();
+                        ipcRenderer.invoke('checkAuth');
                         break;
                     case 'activateLicense':
-                        electronAPI.activateLicense(data.licenseKey);
+                        ipcRenderer.invoke('activateLicense', data.licenseKey);
                         break;
                     case 'loadRealTrack':
-                        electronAPI.loadRealTrack(data.file);
+                        ipcRenderer.invoke('loadRealTrack', data.file);
                         break;
                     case 'startRealTrack':
-                        electronAPI.startRealTrack();
+                        ipcRenderer.invoke('startRealTrack');
                         break;
                 }
             }

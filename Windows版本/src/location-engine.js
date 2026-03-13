@@ -1,7 +1,16 @@
 // Windows 版本的 GPS 模擬引擎
 const { exec } = require('child_process');
 const { promisify } = require('util');
+const path = require('path');
+const fs = require('fs');
+const { app } = require('electron');
 const execAsync = promisify(exec);
+
+function getResourcesPath() {
+    return app.isPackaged
+        ? path.join(process.resourcesPath)
+        : path.join(__dirname, '..');
+}
 
 class LocationEngine {
     constructor() {

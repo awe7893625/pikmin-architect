@@ -101,7 +101,7 @@
         
         async function loadLanguage(lang) {
             try {
-                const langPath = `locales/${lang}.json`;
+                const langPath = `../locales/${lang}.json`;
                 const response = await fetch(langPath);
                 if (response.ok) {
                     translations = await response.json();

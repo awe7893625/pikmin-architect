@@ -51,6 +51,7 @@
       "renderer/**/*",
       "src/**/*",
       "scripts/**/*",
+      "locales/**/*",
       "package.json"
     ],
     "extraResources": [
