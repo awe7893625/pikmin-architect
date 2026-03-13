@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3001;
 
 // 中間件
 app.use(cors());
-// 需要保留 raw body 以驗證 Polar webhook 簽名
+// 需要保留 raw body 以驗證 ECPay 回傳
 app.use(
     express.json({
         verify: (req, _res, buf) => {
@@ -16,6 +16,7 @@ app.use(
         }
     })
 );
+app.use(express.urlencoded({ extended: true }));
 
 // 先處理 API 路由和特殊路由，再處理靜態文件
 // 這樣可以確保 /payment 等路由優先被處理
@@ -628,7 +629,7 @@ app.get('/payment', (req, res) => {
     }
 });
 
-// 付款成功頁面
+// 付款成功頁面（GET — 正常跳轉 / 手動訪問）
 app.get('/payment/success', (req, res) => {
     try {
         const successPath = path.resolve(paymentProcessDir, 'success.html');
@@ -640,6 +641,54 @@ app.get('/payment/success', (req, res) => {
     } catch (error) {
         console.error('❌ 付款成功頁面錯誤:', error);
         res.status(500).json({ error: 'Internal Server Error', message: error.message });
+    }
+});
+
+// 付款成功頁面（POST — ECPay OrderResultURL 回傳）
+app.post('/payment/success', async (req, res) => {
+    try {
+        const body = req.body;
+        const orderId = body.CustomField1;
+        console.log('📥 ECPay OrderResultURL 收到, orderId:', orderId, 'RtnCode:', body.RtnCode);
+
+        // 若 ECPay notify 已先處理完，order 已是 paid
+        // 若 notify 較慢，這裡也嘗試處理
+        if (String(body.RtnCode) === '1' && orderId) {
+            const order = await getOrderFromKV(orderId);
+            if (order && order.status !== 'paid') {
+                const crypto = require('crypto');
+                const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+                order.status = 'paid';
+                order.licenseKey = licenseKey;
+                order.paidAt = new Date().toISOString();
+                order.ecpayTradeNo = body.TradeNo || '';
+                await setOrder(orderId, order);
+                await setLicense(licenseKey, {
+                    licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
+                    deviceId: null, boundDeviceId: null,
+                    paidAt: order.paidAt, isValid: true,
+                    createdAt: order.createdAt, activatedAt: null,
+                    planType: order.planType, issuedBy: 'payment',
+                    note: `ECPay TradeNo: ${body.TradeNo || ''}`
+                });
+                console.log('✅ ECPay OrderResultURL 付款處理完成:', licenseKey);
+            }
+        }
+
+        // 讀取 order 拿 licenseKey，重定向到 GET 成功頁面
+        if (orderId) {
+            const order = await getOrderFromKV(orderId);
+            if (order && order.licenseKey) {
+                return res.redirect(`/payment/success?licenseKey=${order.licenseKey}&planType=${order.planType}`);
+            }
+        }
+        // Fallback: 直接顯示成功頁面
+        const successPath = path.resolve(paymentProcessDir, 'success.html');
+        if (fs.existsSync(successPath)) return res.sendFile(successPath);
+        res.redirect('/payment/success');
+    } catch (error) {
+        console.error('❌ ECPay OrderResultURL 錯誤:', error);
+        res.redirect('/payment/success');
     }
 });
 
@@ -1054,32 +1103,50 @@ app.post('/api/license/verify', async (req, res) => {
     }
 });
 
-// 5. 創建付款訂單（不生成授權碼，等待付款成功）
+// ========== ECPay 綠界金流工具 ==========
+const ECPAY_MERCHANT_ID = process.env.ECPAY_MERCHANT_ID || '3487294';
+const ECPAY_HASH_KEY = process.env.ECPAY_HASH_KEY || 'GqnzRPCvsBTCB57O';
+const ECPAY_HASH_IV = process.env.ECPAY_HASH_IV || '0LYW9hnDtehDd2te';
+const ECPAY_AIO_URL = process.env.ECPAY_AIO_URL || 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5';
+
+function ecpayUrlEncode(str) {
+    // ECPay 用 .NET HttpUtility.UrlEncode: 空格→'+', 小寫 hex
+    return encodeURIComponent(str)
+        .replace(/%20/g, '+')
+        .replace(/%2d/gi, '-').replace(/%5f/gi, '_').replace(/%2e/gi, '.')
+        .replace(/%21/g, '!').replace(/%2a/g, '*').replace(/%28/g, '(').replace(/%29/g, ')')
+        .toLowerCase();
+}
+
+function genEcpayCheckMacValue(params) {
+    const crypto = require('crypto');
+    const sorted = Object.keys(params).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    let raw = `HashKey=${ECPAY_HASH_KEY}`;
+    for (const k of sorted) { raw += `&${k}=${params[k]}`; }
+    raw += `&HashIV=${ECPAY_HASH_IV}`;
+    const encoded = ecpayUrlEncode(raw);
+    return crypto.createHash('sha256').update(encoded).digest('hex').toUpperCase();
+}
+
+// 5. 創建付款訂單（ECPay 綠界信用卡）
 app.post('/api/payment/create', async (req, res) => {
     const { planType } = req.body;
-    
+
     if (!planType || (planType !== 'annual' && planType !== 'lifetime')) {
         return res.status(400).json({ error: '無效的方案類型', code: 'BAD_REQUEST' });
     }
-    
-    // 定義價格
-    const prices = {
-        annual: 690,
-        lifetime: 1750
-    };
-    
+
+    const prices = { annual: 690, lifetime: 1750 };
+    const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
     const amount = prices[planType];
-    
-    // 生成訂單 ID
+
     const crypto = require('crypto');
     const orderId = 'ORD-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-    
-    // 創建訂單（狀態為 pending，未付款）並保存到持久化存儲
+
     const orderData = {
-        planType: planType,
-        amount: amount,
-        status: 'pending', // pending, paid, cancelled
-        licenseKey: null, // 付款成功後才生成
+        planType, amount,
+        status: 'pending',
+        licenseKey: null,
         createdAt: new Date().toISOString(),
         paidAt: null
     };
@@ -1088,210 +1155,124 @@ app.post('/api/payment/create', async (req, res) => {
     } catch (error) {
         console.error('❌ [付款建立] 訂單保存失敗:', error);
         if (error.message.includes('授權系統不可用') || error.message.includes('KV')) {
-            return res.status(503).json({
-                error: '授權系統暫時不可用',
-                message: error.message,
-                code: 'KV_UNAVAILABLE'
-            });
+            return res.status(503).json({ error: '授權系統暫時不可用', message: error.message, code: 'KV_UNAVAILABLE' });
         }
         return res.status(500).json({ error: 'Internal Server Error', message: error.message });
     }
-    
-    // 檢查是否有 Polar 金流設定
-    const POLAR_ACCESS_TOKEN = process.env.POLAR_ACCESS_TOKEN;
-    // 兼容舊命名：你可能存的是「價格 ID」或「產品 ID」。
-    // - 若你有產品 ID，請優先用 POLAR_PRODUCT_ID_ANNUAL / POLAR_PRODUCT_ID_LIFETIME
-    // - 若你只有價格 ID，仍可填 POLAR_PRODUCT_PRICE_ID_*，伺服器會嘗試從 Polar 產品清單反查對應的產品 ID
-    const POLAR_PRODUCT_ID_ANNUAL = process.env.POLAR_PRODUCT_ID_ANNUAL || '';
-    const POLAR_PRODUCT_ID_LIFETIME = process.env.POLAR_PRODUCT_ID_LIFETIME || '';
-    const POLAR_PRODUCT_PRICE_ID_ANNUAL = process.env.POLAR_PRODUCT_PRICE_ID_ANNUAL || '3c450333-7ba3-4d6a-a93a-b4cb0a9b8aa2';
-    const POLAR_PRODUCT_PRICE_ID_LIFETIME = process.env.POLAR_PRODUCT_PRICE_ID_LIFETIME || '4e7ccc7a-c4ef-4f55-b296-5c0f81d0af60';
-    
-    if (POLAR_ACCESS_TOKEN) {
-        // 有 Polar 設定，使用 Polar 金流
-        try {
-            const { Polar } = require('@polar-sh/sdk');
-            const polar = new Polar({
-                accessToken: POLAR_ACCESS_TOKEN
-            });
-            
-            // Polar JS SDK 的 checkouts.create 需要 products: string[]（產品 ID）
-            async function resolveProductIdFromPriceId(priceId) {
-                // 嘗試從 Polar 產品清單反查：找到某個 product.prices[].id === priceId 的 product.id
-                const listResult = await polar.products.list({});
-                for await (const page of listResult) {
-                    const items =
-                        (page && page.result && Array.isArray(page.result.items) ? page.result.items : null) ||
-                        (page && Array.isArray(page.items) ? page.items : null) ||
-                        (page && Array.isArray(page.products) ? page.products : null) ||
-                        (Array.isArray(page) ? page : []);
-                    for (const prod of items) {
-                        const prices = prod && Array.isArray(prod.prices) ? prod.prices : [];
-                        if (prices.find(p => p && p.id === priceId)) {
-                            return prod.id;
-                        }
-                    }
-                }
-                return null;
-            }
 
-            const configuredProductId =
-                planType === 'annual' ? POLAR_PRODUCT_ID_ANNUAL : POLAR_PRODUCT_ID_LIFETIME;
-            const configuredPriceId =
-                planType === 'annual' ? POLAR_PRODUCT_PRICE_ID_ANNUAL : POLAR_PRODUCT_PRICE_ID_LIFETIME;
-
-            const productId = configuredProductId
-                ? configuredProductId
-                : (await resolveProductIdFromPriceId(configuredPriceId));
-            if (!productId) {
-                throw new Error(
-                    `找不到對應的 Polar 產品（請在 Vercel 設定 POLAR_PRODUCT_ID_${planType === 'annual' ? 'ANNUAL' : 'LIFETIME'}，或確認 POLAR_PRODUCT_PRICE_ID_* 是否正確）`
-                );
-            }
-            
-            // 創建 Polar checkout session
-            const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.vercel.app';
-            const checkoutSession = await polar.checkouts.create({
-                products: [productId],
-                successUrl: `${baseUrl}/payment/success?orderId=${orderId}`,
-                cancelUrl: `${baseUrl}/payment?cancelled=1`,
-                metadata: {
-                    orderId: orderId,
-                    planType: planType
-                }
-            });
-            const checkoutUrl =
-                checkoutSession && (checkoutSession.url || checkoutSession.checkout_url || checkoutSession.checkoutUrl);
-            if (!checkoutUrl) {
-                throw new Error('Polar checkout create succeeded but no checkout URL returned');
-            }
-            res.json({
-                success: true,
-                orderId: orderId,
-                paymentUrl: checkoutUrl,
-                message: '訂單已創建，請前往付款'
-            });
-        } catch (error) {
-            console.error('❌ Polar 金流錯誤:', error);
-            // production：不允許回退到模擬付款（避免繞過）
-            if (isProd && !ALLOW_MOCK_PAYMENT) {
-                // 僅在管理員帶正確 x-admin-key 時回傳除錯資訊（避免洩漏）
-                const adminHeaderKey = req.headers['x-admin-key'];
-                const isAdminDebug =
-                    process.env.ENABLE_ADMIN_CONSOLE === '1' &&
-                    process.env.ADMIN_KEY &&
-                    adminHeaderKey &&
-                    String(adminHeaderKey) === String(process.env.ADMIN_KEY);
-                const debug = isAdminDebug
-                    ? {
-                          debugName: error && error.name ? error.name : null,
-                          debugMessage: error && error.message ? error.message : String(error)
-                      }
-                    : {};
-                return res.status(502).json({
-                    success: false,
-                    error: '金流暫時不可用，請稍後再試',
-                    code: 'POLAR_FAILED',
-                    ...debug
-                });
-            }
-            // 非 production（或明確允許）：回退到模擬付款
-            return res.json({
-                success: true,
-                orderId: orderId,
-                paymentUrl: `/payment/process?orderId=${orderId}`,
-                message: '訂單已創建，請前往付款（模擬模式）'
-            });
-        }
-    } else {
-        // production：必須設定 Polar，否則視為未上線
-        if (isProd && !ALLOW_MOCK_PAYMENT) {
-            console.error('❌ 未設定 Polar 金流（production 禁止模擬付款）');
-            return res.status(500).json({
-                success: false,
-                error: '金流尚未設定完成，請聯絡管理員',
-                code: 'PAYMENT_NOT_CONFIGURED'
-            });
-        }
-        // 非 production（或明確允許）：模擬付款流程（僅用於測試）
-        console.warn('⚠️ 警告：未設定 Polar 金流，使用模擬付款流程（僅用於測試）');
-        return res.json({
+    // 使用 ECPay 綠界信用卡
+    try {
+        const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.vercel.app';
+        res.json({
             success: true,
-            orderId: orderId,
-            paymentUrl: `/payment/process?orderId=${orderId}`, // 模擬付款頁面
-            message: '訂單已創建，請前往付款（測試模式）'
+            orderId,
+            paymentUrl: `/payment/ecpay-checkout?orderId=${orderId}`,
+            message: '訂單已創建，前往綠界付款'
         });
+    } catch (error) {
+        console.error('❌ 付款建立錯誤:', error);
+        return res.status(500).json({ error: '付款建立失敗', message: error.message });
     }
 });
 
-// 5.1. Polar 付款回調 webhook
-app.post('/api/payment/polar-webhook', async (req, res) => {
-    // Polar 會發送 webhook 通知付款狀態
+// 5.0.1 ECPay 結帳跳轉頁（自動 POST 表單到綠界）
+app.get('/payment/ecpay-checkout', async (req, res) => {
+    const { orderId } = req.query;
+    if (!orderId) return res.redirect('/');
+
+    const order = await getOrderFromKV(orderId);
+    if (!order) return res.status(404).send('訂單不存在');
+    if (order.status === 'paid') {
+        return res.redirect(`/payment/success?licenseKey=${order.licenseKey}&planType=${order.planType}`);
+    }
+
+    const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.vercel.app';
+    const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const merchantTradeDate = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+    const params = {
+        MerchantID: ECPAY_MERCHANT_ID,
+        MerchantTradeNo: orderId.replace(/[^A-Za-z0-9]/g, '').slice(0, 20),
+        MerchantTradeDate: merchantTradeDate,
+        PaymentType: 'aio',
+        TotalAmount: String(order.amount),
+        TradeDesc: ecpayUrlEncode('KongGoo iOS GPS 位置模擬工具授權'),
+        ItemName: planNames[order.planType] || 'KongGoo 授權',
+        ReturnURL: `${baseUrl}/api/payment/ecpay-notify`,
+        OrderResultURL: `${baseUrl}/payment/success`,
+        ChoosePayment: 'Credit',
+        EncryptType: '1',
+        CustomField1: orderId
+    };
+    params.CheckMacValue = genEcpayCheckMacValue(params);
+
+    // 自動提交表單
+    const fields = Object.entries(params).map(([k,v]) => `<input type="hidden" name="${k}" value="${String(v).replace(/"/g, '&quot;')}">`).join('\n');
+    res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>前往付款...</title></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475569;">
+<div style="text-align:center"><p style="font-size:1.1rem;font-weight:600;">正在前往綠界付款頁面...</p><p style="color:#94a3b8;font-size:.9rem;">請稍候，若未自動跳轉請點擊下方按鈕</p>
+<form id="ecpayForm" method="POST" action="${ECPAY_AIO_URL}">${fields}
+<button type="submit" style="margin-top:16px;padding:10px 24px;border-radius:8px;background:#6366f1;color:#fff;border:none;font-weight:600;cursor:pointer;">前往付款</button>
+</form></div>
+<script>document.getElementById('ecpayForm').submit();</script>
+</body></html>`);
+});
+
+// 5.1. ECPay 付款回調（Server-to-Server，ReturnURL）
+app.post('/api/payment/ecpay-notify', async (req, res) => {
     try {
-        // 驗證 webhook（建議 production 必開）
-        const secret = process.env.POLAR_WEBHOOK_SECRET || '';
-        if (!secret) {
-            console.warn('⚠️ [Polar webhook] POLAR_WEBHOOK_SECRET 未設定，拒絕處理（避免偽造）');
-            return res.status(503).json({ error: 'Webhook not configured', code: 'WEBHOOK_NOT_CONFIGURED' });
+        const body = req.body;
+        console.log('📥 ECPay notify 收到:', JSON.stringify(body));
+
+        // 驗證 CheckMacValue
+        const receivedMac = body.CheckMacValue;
+        const paramsToCheck = { ...body };
+        delete paramsToCheck.CheckMacValue;
+        const expectedMac = genEcpayCheckMacValue(paramsToCheck);
+        if (receivedMac !== expectedMac) {
+            console.warn('⚠️ [ECPay notify] CheckMacValue 不符:', receivedMac, '!=', expectedMac);
+            return res.send('0|CheckMacValue Error');
         }
 
-        const { validateEvent, WebhookVerificationError } = require('@polar-sh/sdk/webhooks');
-        const raw = req.rawBody || Buffer.from(JSON.stringify(req.body || {}));
-        let evt;
-        try {
-            evt = validateEvent(raw, req.headers, secret);
-        } catch (e) {
-            if (e instanceof WebhookVerificationError) {
-                console.warn('⚠️ [Polar webhook] 簽名驗證失敗');
-                return res.status(403).send('Forbidden');
+        const rtnCode = body.RtnCode;
+        const orderId = body.CustomField1;
+
+        if (String(rtnCode) === '1' && orderId) {
+            const order = await getOrderFromKV(orderId);
+            if (order && order.status !== 'paid') {
+                const crypto = require('crypto');
+                const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+
+                order.status = 'paid';
+                order.licenseKey = licenseKey;
+                order.paidAt = new Date().toISOString();
+                order.ecpayTradeNo = body.TradeNo || '';
+                await setOrder(orderId, order);
+
+                await setLicense(licenseKey, {
+                    licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
+                    deviceId: null,
+                    boundDeviceId: null,
+                    paidAt: order.paidAt,
+                    isValid: true,
+                    createdAt: order.createdAt,
+                    activatedAt: null,
+                    planType: order.planType,
+                    issuedBy: 'payment',
+                    note: `ECPay TradeNo: ${body.TradeNo || ''}`
+                });
+
+                console.log('✅ ECPay 付款成功，授權碼:', licenseKey, '訂單:', orderId);
             }
-            throw e;
         }
 
-        const event = evt.type;
-        const data = evt.data;
-        console.log('📥 Polar webhook 收到:', event);
-        
-        if (event === 'checkout.succeeded') {
-            const orderId = data.metadata?.orderId;
-            
-            if (orderId) {
-                const order = await getOrderFromKV(orderId);
-                
-                if (order) {
-                    // 生成授權碼
-                    const crypto = require('crypto');
-                    const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
-                    
-                    // 更新訂單狀態
-                    order.status = 'paid';
-                    order.licenseKey = licenseKey;
-                    order.paidAt = new Date().toISOString();
-                    await setOrder(orderId, order);
-                    
-                    // 將授權碼添加到持久化存儲
-                    await setLicense(licenseKey, {
-                        licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
-                        deviceId: null,
-                        boundDeviceId: null,
-                        paidAt: order.paidAt,
-                        isValid: true,
-                        createdAt: order.createdAt,
-                        activatedAt: null,
-                        planType: order.planType,
-                        issuedBy: 'payment',
-                        note: null
-                    });
-                    
-                    console.log('✅ Polar 付款成功，授權碼已生成並保存到持久化存儲:', licenseKey);
-                }
-            }
-        }
-        
-        res.json({ received: true });
+        // ECPay 要求回傳 1|OK
+        res.send('1|OK');
     } catch (error) {
-        console.error('❌ Polar webhook 錯誤:', error);
-        res.status(500).json({ error: 'Webhook processing failed' });
+        console.error('❌ ECPay notify 錯誤:', error);
+        res.send('0|Error');
     }
 });
 
