@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           cd "Windows版本"
-          npm ci
+          npm install
           npm run build:win
 
       - name: Upload Windows Installer

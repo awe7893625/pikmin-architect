@@ -51,14 +51,14 @@
     <div id="map"></div>
     <div class="glass-panel" onclick="event.stopPropagation()">
         <div class="island" onclick="reconnect()">
-            <span id="st-text"> 點擊初始化連線</span>
+            <span id="st-text" data-i18n="initConnection"> 點擊初始化連線</span>
             <div id="led"></div>
         </div>
-        <input type="text" class="search-bar" id="search" placeholder="🔍 搜尋地點..." onkeypress="if(event.keyCode==13) searchLocation()">
+        <input type="text" class="search-bar" id="search" data-i18n-placeholder="searchPlaceholder" placeholder="🔍 搜尋地點..." onkeypress="if(event.keyCode==13) searchLocation()">
         <div class="mode-tabs">
-            <div class="tab active" id="t1" onclick="setMode('tp')">瞬移</div>
-            <div class="tab" id="t2" onclick="setMode('route')">散花</div>
-            <div class="tab" id="t3" onclick="setMode('fav')">最愛</div>
+            <div class="tab active" id="t1" onclick="setMode('tp')" data-i18n="teleport">瞬移</div>
+            <div class="tab" id="t2" onclick="setMode('route')" data-i18n="route">散花</div>
+            <div class="tab" id="t3" onclick="setMode('fav')" data-i18n="favorites">最愛</div>
         </div>
         <div id="trial-status-bar" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:13px; margin-bottom:12px; text-align:center; display:block;">
             🎁 剩餘免費次數: <span id="remaining-trial-count-bar">載入中...</span>
@@ -79,6 +79,12 @@
             <button onclick="checkAuthStatus()" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:10px; font-weight:600; font-size:13px; margin-bottom:8px;" data-i18n="checkAuth">🔍 檢查授權</button>
             <input type="text" id="license-input" data-i18n-placeholder="licenseInput" placeholder="輸入授權碼" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ddd; font-size:13px; margin-bottom:8px; box-sizing:border-box;">
             <button onclick="activateLicense()" style="width:100%; padding:10px; background:rgba(52,199,89,0.1); color:#34C759; border:none; border-radius:10px; font-weight:600; font-size:13px;" data-i18n="activateLicense">✅ 激活授權碼</button>
+        </div>
+        <div style="display:flex; gap:4px; margin-bottom:12px; justify-content:center;">
+            <button class="lang-btn" data-lang="zh-TW" onclick="setLanguage('zh-TW')" style="flex:1; padding:8px; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; background:rgba(0,122,255,0.1); color:var(--apple-blue);">繁中</button>
+            <button class="lang-btn" data-lang="en" onclick="setLanguage('en')" style="flex:1; padding:8px; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; background:rgba(0,0,0,0.05); color:#666;">EN</button>
+            <button class="lang-btn" data-lang="ko" onclick="setLanguage('ko')" style="flex:1; padding:8px; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; background:rgba(0,0,0,0.05); color:#666;">한국</button>
+            <button class="lang-btn" data-lang="ja" onclick="setLanguage('ja')" style="flex:1; padding:8px; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; background:rgba(0,0,0,0.05); color:#666;">日本</button>
         </div>
         <div class="nav-section"><div class="grid" id="loc-list"></div></div>
     </div>
@@ -138,8 +144,12 @@
             document.querySelectorAll('.lang-btn').forEach(btn => {
                 if (btn.getAttribute('data-lang') === currentLang) {
                     btn.classList.add('active');
+                    btn.style.background = 'rgba(0,122,255,0.1)';
+                    btn.style.color = 'var(--apple-blue)';
                 } else {
                     btn.classList.remove('active');
+                    btn.style.background = 'rgba(0,0,0,0.05)';
+                    btn.style.color = '#666';
                 }
             });
         }
