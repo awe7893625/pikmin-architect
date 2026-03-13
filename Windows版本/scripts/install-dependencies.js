@@ -4,8 +4,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
-const { app } = require('electron');
-const { dialog } = require('electron').remote || require('@electron/remote');
+const { app, dialog } = require('electron');
 
 const execAsync = promisify(exec);
 
