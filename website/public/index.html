@@ -280,6 +280,8 @@
         .price-btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
         .price-btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
         .pricing-note { text-align: center; margin-top: 32px; font-size: .85rem; color: var(--text-3); }
+        .price-krw { font-size: .9rem; color: var(--text-3); font-weight: 600; margin-top: 2px; display: none; }
+        .price-krw.show { display: block; }
 
         /* ===== Download ===== */
         .download { padding: 100px 0; }
@@ -682,6 +684,7 @@
                 <div class="price-badge" data-i18n="price_badge">推薦</div>
                 <h3 data-i18n="price_annual_title">年費方案</h3>
                 <div class="price-amount"><span data-i18n="price_annual_amount">NT$ 690</span> <small data-i18n="price_annual_period">/ 年</small></div>
+                <div class="price-krw" id="krw-annual"></div>
                 <ul class="price-features">
                     <li><svg viewBox="0 0 16 16" fill="none"><path d="M13.6 4.4L6.4 11.6 2.4 7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-i18n="price_annual_f1">所有功能無限使用</span></li>
                     <li><svg viewBox="0 0 16 16" fill="none"><path d="M13.6 4.4L6.4 11.6 2.4 7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-i18n="price_annual_f2">免費技術支援</span></li>
@@ -693,6 +696,7 @@
             <div class="price-card">
                 <h3 data-i18n="price_lifetime_title">買斷方案</h3>
                 <div class="price-amount"><span data-i18n="price_lifetime_amount">NT$ 1,750</span> <small data-i18n="price_lifetime_period">一次付清</small></div>
+                <div class="price-krw" id="krw-lifetime"></div>
                 <ul class="price-features">
                     <li><svg viewBox="0 0 16 16" fill="none"><path d="M13.6 4.4L6.4 11.6 2.4 7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-i18n="price_lifetime_f1">所有功能無限使用</span></li>
                     <li><svg viewBox="0 0 16 16" fill="none"><path d="M13.6 4.4L6.4 11.6 2.4 7.6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> <span data-i18n="price_lifetime_f2">永久授權</span></li>
@@ -918,10 +922,14 @@ function showPaymentModal(planType) {
         ? { name: t.pay_annual_name || '年費方案', price: t.price_annual_amount || 'NT$ 690', period: t.pay_annual_period || '1 年授權' }
         : { name: t.pay_lifetime_name || '買斷方案', price: t.price_lifetime_amount || 'NT$ 1,750', period: t.pay_lifetime_period || '永久授權' };
 
+    const krwRef = currentLang === 'ko'
+        ? `<div style="font-size:.85rem;color:var(--text-3);margin-top:2px;">≈ ${formatKrw(PRICES_TWD[planType])}</div>`
+        : '';
     opts.innerHTML = `
         <div style="padding:16px;background:var(--accent-bg);border-radius:var(--radius-sm);margin-bottom:16px;">
             <div style="font-size:1rem;font-weight:700;">${plan.name}</div>
             <div style="font-size:1.5rem;color:var(--accent);font-weight:800;margin:4px 0;">${plan.price}</div>
+            ${krwRef}
             <div style="font-size:.85rem;color:var(--text-3);">${plan.period}</div>
         </div>
         <button onclick="redirectToPayment('${planType}')" style="width:100%;padding:14px;border-radius:12px;background:var(--accent);color:#fff;font-size:1rem;font-weight:700;border:none;cursor:pointer;transition:background .2s;" onmouseover="this.style.background='var(--accent-dark)'" onmouseout="this.style.background='var(--accent)'">
@@ -1189,6 +1197,41 @@ function hideDemoMessage() {
     }
 }
 
+/* ===== KRW Currency Conversion ===== */
+let krwRate = 43; // fallback: 1 TWD ≈ 43 KRW
+const PRICES_TWD = { annual: 690, lifetime: 1750 };
+
+async function fetchKrwRate() {
+    try {
+        const res = await fetch('https://open.er-api.com/v6/latest/TWD');
+        if (res.ok) {
+            const data = await res.json();
+            if (data.rates && data.rates.KRW) krwRate = data.rates.KRW;
+        }
+    } catch (e) { /* use fallback rate */ }
+}
+
+function formatKrw(twd) {
+    const krw = Math.round(twd * krwRate / 1000) * 1000;
+    return '₩' + krw.toLocaleString();
+}
+
+function updateKrwDisplay() {
+    const show = currentLang === 'ko';
+    const annualEl = document.getElementById('krw-annual');
+    const lifetimeEl = document.getElementById('krw-lifetime');
+    if (annualEl) {
+        annualEl.textContent = '≈ ' + formatKrw(PRICES_TWD.annual) + ' / 년';
+        annualEl.classList.toggle('show', show);
+    }
+    if (lifetimeEl) {
+        lifetimeEl.textContent = '≈ ' + formatKrw(PRICES_TWD.lifetime);
+        lifetimeEl.classList.toggle('show', show);
+    }
+}
+
+fetchKrwRate().then(updateKrwDisplay);
+
 /* ===== i18n Language System ===== */
 let currentLang = localStorage.getItem('siteLang') || 'zh-TW';
 let siteTranslations = {};
@@ -1224,6 +1267,8 @@ function applySiteTranslations() {
     // Update search placeholder
     const searchInput = document.getElementById('demo-search');
     if (searchInput && siteTranslations.showcase_search) searchInput.placeholder = siteTranslations.showcase_search;
+    // Update KRW display
+    updateKrwDisplay();
 }
 
 function updateSiteLangButtons() {
