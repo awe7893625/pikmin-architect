@@ -185,12 +185,33 @@
             el.textContent = translations.successLicenseDelayed || '已收到付款完成，但授權碼尚在產生中，請稍後重新整理此頁面。';
         }
 
+        async function confirmPolarPayment(orderId) {
+            const el = document.getElementById('licenseKey');
+            el.textContent = translations.successWaitingLicense || '正在確認付款並產生授權碼...';
+            try {
+                const res = await fetch(`/api/payment/polar-confirm?orderId=${encodeURIComponent(orderId)}`);
+                const data = await res.json();
+                if (data.success && data.licenseKey) {
+                    el.textContent = data.licenseKey;
+                    return;
+                }
+            } catch (_) {}
+            // fallback to polling
+            await pollOrderForLicense(orderId);
+        }
+
+        const gateway = urlParams.get('gateway');
+
         (async () => {
             await loadLanguage(currentLang);
             applyTranslations();
             const el = document.getElementById('licenseKey');
             if (licenseKey) {
                 el.textContent = licenseKey;
+                return;
+            }
+            if (orderId && gateway === 'polar') {
+                await confirmPolarPayment(orderId);
                 return;
             }
             if (orderId) {

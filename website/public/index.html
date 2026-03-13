@@ -948,7 +948,7 @@ function redirectToPayment(planType) {
     fetch('/api/payment/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planType })
+        body: JSON.stringify({ planType, lang: currentLang })
     })
     .then(res => {
         if (!res.ok) return res.json().then(err => Promise.reject(err));

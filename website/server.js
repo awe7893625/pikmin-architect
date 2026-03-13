@@ -1109,6 +1109,13 @@ const ECPAY_HASH_KEY = process.env.ECPAY_HASH_KEY || 'GqnzRPCvsBTCB57O';
 const ECPAY_HASH_IV = process.env.ECPAY_HASH_IV || '0LYW9hnDtehDd2te';
 const ECPAY_AIO_URL = process.env.ECPAY_AIO_URL || 'https://payment.ecpay.com.tw/Cashier/AioCheckOut/V5';
 
+// ========== Polar 國際金流 ==========
+const POLAR_ACCESS_TOKEN = process.env.POLAR_ACCESS_TOKEN;
+const POLAR_PRICE_IDS = {
+    annual: process.env.POLAR_PRODUCT_PRICE_ID_ANNUAL,
+    lifetime: process.env.POLAR_PRODUCT_PRICE_ID_LIFETIME
+};
+
 function ecpayUrlEncode(str) {
     // ECPay 用 .NET HttpUtility.UrlEncode: 空格→'+', 小寫 hex
     return encodeURIComponent(str)
@@ -1128,9 +1135,9 @@ function genEcpayCheckMacValue(params) {
     return crypto.createHash('sha256').update(encoded).digest('hex').toUpperCase();
 }
 
-// 5. 創建付款訂單（ECPay 綠界信用卡）
+// 5. 創建付款訂單（自動路由：繁中→ECPay，韓文/英文→Polar）
 app.post('/api/payment/create', async (req, res) => {
-    const { planType } = req.body;
+    const { planType, lang } = req.body;
 
     if (!planType || (planType !== 'annual' && planType !== 'lifetime')) {
         return res.status(400).json({ error: '無效的方案類型', code: 'BAD_REQUEST' });
@@ -1139,6 +1146,7 @@ app.post('/api/payment/create', async (req, res) => {
     const prices = { annual: 690, lifetime: 1750 };
     const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
     const amount = prices[planType];
+    const usePolar = lang && lang !== 'zh-TW' && POLAR_ACCESS_TOKEN && POLAR_PRICE_IDS[planType];
 
     const crypto = require('crypto');
     const orderId = 'ORD-' + Date.now() + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
@@ -1147,6 +1155,7 @@ app.post('/api/payment/create', async (req, res) => {
         planType, amount,
         status: 'pending',
         licenseKey: null,
+        gateway: usePolar ? 'polar' : 'ecpay',
         createdAt: new Date().toISOString(),
         paidAt: null
     };
@@ -1160,12 +1169,45 @@ app.post('/api/payment/create', async (req, res) => {
         return res.status(500).json({ error: 'Internal Server Error', message: error.message });
     }
 
-    // 使用 ECPay 綠界信用卡
+    // 路由：非繁中 → Polar 國際金流
+    if (usePolar) {
+        try {
+            const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
+            const polarRes = await fetch('https://api.polar.sh/v1/checkouts/', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${POLAR_ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    product_price_id: POLAR_PRICE_IDS[planType],
+                    success_url: `${baseUrl}/payment/success?orderId=${orderId}&gateway=polar`,
+                    metadata: { orderId, planType }
+                })
+            });
+            const polarData = await polarRes.json();
+            if (polarData.url) {
+                return res.json({
+                    success: true,
+                    orderId,
+                    gateway: 'polar',
+                    paymentUrl: polarData.url,
+                    message: 'Redirecting to Polar checkout'
+                });
+            }
+            // Polar 失敗 → fallback 到 ECPay
+            console.warn('⚠️ Polar checkout 失敗，fallback 到 ECPay:', JSON.stringify(polarData));
+        } catch (polarError) {
+            console.warn('⚠️ Polar API 錯誤，fallback 到 ECPay:', polarError.message);
+        }
+    }
+
+    // 預設：ECPay 綠界信用卡（台灣客戶 or Polar fallback）
     try {
-        const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
         res.json({
             success: true,
             orderId,
+            gateway: 'ecpay',
             paymentUrl: `/payment/ecpay-checkout?orderId=${orderId}`,
             message: '訂單已創建，前往綠界付款'
         });
@@ -1273,6 +1315,48 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
     } catch (error) {
         console.error('❌ ECPay notify 錯誤:', error);
         res.send('0|Error');
+    }
+});
+
+// 5.1.1 Polar 付款成功回調（success_url redirect 後客戶端輪詢確認）
+app.get('/api/payment/polar-confirm', async (req, res) => {
+    const { orderId } = req.query;
+    if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+
+    try {
+        const order = await getOrderFromKV(orderId);
+        if (!order) return res.status(404).json({ error: 'Order not found' });
+        if (order.status === 'paid') {
+            return res.json({ success: true, licenseKey: order.licenseKey, planType: order.planType });
+        }
+
+        // Polar success_url 被訪問 = 付款完成，直接發授權碼
+        const crypto = require('crypto');
+        const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+
+        order.status = 'paid';
+        order.licenseKey = licenseKey;
+        order.paidAt = new Date().toISOString();
+        await setOrder(orderId, order);
+
+        await setLicense(licenseKey, {
+            licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
+            deviceId: null,
+            boundDeviceId: null,
+            paidAt: order.paidAt,
+            isValid: true,
+            createdAt: order.createdAt,
+            activatedAt: null,
+            planType: order.planType,
+            issuedBy: 'payment',
+            note: 'Polar international checkout'
+        });
+
+        console.log('✅ Polar 付款成功，授權碼:', licenseKey, '訂單:', orderId);
+        return res.json({ success: true, licenseKey, planType: order.planType });
+    } catch (error) {
+        console.error('❌ Polar confirm 錯誤:', error);
+        return res.status(500).json({ error: 'Internal error' });
     }
 });
 
