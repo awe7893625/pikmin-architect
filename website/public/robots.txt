@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+Sitemap: https://konggoo.uk/sitemap.xml

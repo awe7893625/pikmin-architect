@@ -1162,7 +1162,7 @@ app.post('/api/payment/create', async (req, res) => {
 
     // 使用 ECPay 綠界信用卡
     try {
-        const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.vercel.app';
+        const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
         res.json({
             success: true,
             orderId,
@@ -1186,7 +1186,7 @@ app.get('/payment/ecpay-checkout', async (req, res) => {
         return res.redirect(`/payment/success?licenseKey=${order.licenseKey}&planType=${order.planType}`);
     }
 
-    const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.vercel.app';
+    const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
     const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
