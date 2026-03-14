@@ -117,7 +117,7 @@ class AuthManager {
         }
     }
 
-    // 激活授權碼
+    // 授權碼驗證
     async activateLicense(licenseKey) {
         const deviceId = await this.getDeviceId();
         
@@ -133,7 +133,7 @@ class AuthManager {
                 this.isAuthorized = true;
                 return { success: true, message: response.data.message };
             } else {
-                return { success: false, error: response.data.error || '激活失敗' };
+                return { success: false, error: response.data.error || '授權失敗' };
             }
         } catch (error) {
             return { success: false, error: error.message };
