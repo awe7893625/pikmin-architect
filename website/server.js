@@ -2261,8 +2261,8 @@ app.get('/api/version', (req, res) => {
 });
 
 // 靜態文件服務（放在最後，作為 fallback）
-app.use(express.static('public'));
-app.use('/locales', express.static('locales'));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/locales', express.static(path.join(__dirname, 'locales')));
 app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')));
 
 // 404 處理（放在最後）
