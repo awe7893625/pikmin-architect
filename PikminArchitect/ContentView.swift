@@ -1937,7 +1937,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             return
         }
         
-        print("📤 [授權] 發送授權請求: deviceId=\(deviceId), licenseKey=\(licenseKey)")
+        let maskedKey = String(licenseKey.prefix(4)) + "****" + String(licenseKey.suffix(4))
+        print("📤 [授權] 發送授權請求: deviceId=\(deviceId.suffix(8)), licenseKey=\(maskedKey)")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -1977,12 +1978,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         if let success = json["success"] as? Bool, success {
                             print("✅ [授權] 服務器確認授權成功")
                             DispatchQueue.main.async {
-                                // 清除本地存儲的試用數據
-                                self.webView?.evaluateJavaScript("""
-                                    localStorage.removeItem('favLocs');
-                                    localStorage.removeItem('tpLocs');
-                                    console.log('✅ 授權碼驗證成功，清除本地存儲');
-                                """)
+                                self.webView?.evaluateJavaScript("console.log('✅ 授權碼驗證成功')")
                                 
                                 // 直接更新 UI 為已授權狀態（強制更新）
                                 self.webView?.evaluateJavaScript("""
@@ -2067,16 +2063,23 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 DispatchQueue.main.async {
                     // Fail Closed：503 KV_UNAVAILABLE
                     if httpResponse.statusCode == 503 || errorCode == "KV_UNAVAILABLE" {
+                        let safeErrorMsg = errorMsg.replacingOccurrences(of: "'", with: "\\'").replacingOccurrences(of: "\\", with: "\\\\")
                         self.webView?.evaluateJavaScript("""
                             if (typeof updateAuthUnavailable === 'function') {
-                                updateAuthUnavailable('KV_UNAVAILABLE', '\(errorMsg)');
+                                updateAuthUnavailable('KV_UNAVAILABLE', '\(safeErrorMsg)');
                             } else {
                                 alert('❌ 授權狀態暫不可用（KV_UNAVAILABLE）');
                             }
                         """)
                     } else {
                         let codeText = (errorCode != nil) ? "（\(errorCode!)）" : ""
-                        self.webView?.evaluateJavaScript("alert('❌ \(errorMsg)\(codeText)')")
+                        let fullMsg = "❌ " + errorMsg + codeText
+                        if let jsonData = try? JSONSerialization.data(withJSONObject: fullMsg),
+                           let jsonStr = String(data: jsonData, encoding: .utf8) {
+                            self.webView?.evaluateJavaScript("alert(\(jsonStr))")
+                        } else {
+                            self.webView?.evaluateJavaScript("alert('❌ 授權失敗')")
+                        }
                     }
                 }
             }

@@ -78,7 +78,7 @@
         .modal-footer { display:flex; border-top:1px solid #eee; }
         .modal-btn { flex:1; padding:15px; border:none; background:none; font-size:17px; color:var(--apple-blue); cursor:pointer; }
         
-        /* 激活按鈕（右下角） */
+        /* 授權按鈕（右下角） */
         #activate-btn {
             position: fixed;
             bottom: 20px;
@@ -144,7 +144,7 @@
             <div class="tab" id="t3" onclick="setMode('fav')" data-i18n="favorites">最愛</div>
         </div>
         <div id="trial-status-bar" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:13px; margin-bottom:12px; text-align:center; display:block;">
-            <span data-i18n="remainingTrial">🎁 免費試用</span>: <span id="remaining-trial-count-bar" data-i18n="loading">載入中...</span>
+            <span data-i18n="remainingTrial">🎁 剩餘免費次數</span>: <span id="remaining-trial-count-bar" data-i18n="loading">載入中...</span>
         </div>
         <div class="action-row">
             <button class="btn-action btn-go" onclick="run()" data-i18n="go">GO</button>
@@ -170,7 +170,7 @@
         <div id="auth-ui" style="display:none; margin-bottom:12px; padding:12px; background:rgba(255,193,7,0.1); border-radius:12px;">
             <div style="font-size:12px; color:#666; margin-bottom:8px;" data-i18n="authorizationStatus">授權狀態</div>
             <div id="trial-status" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:14px; margin-bottom:8px; text-align:center;">
-                <span data-i18n="remainingTrial">🎁 免費試用</span>: <span id="remaining-trial-count" data-i18n="loading">載入中...</span>
+                <span data-i18n="remainingTrial">🎁 剩餘免費次數</span>: <span id="remaining-trial-count" data-i18n="loading">載入中...</span>
             </div>
             <button onclick="checkAuthStatus()" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:10px; font-weight:600; font-size:13px; margin-bottom:8px;" data-i18n="checkAuth">🔍 檢查授權</button>
             <div style="margin-bottom:8px; display:flex; gap:8px;">
