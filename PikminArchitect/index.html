@@ -73,6 +73,51 @@
         }
         .preview-dot { width: 14px !important; height: 14px !important; background: none; border: 3px solid var(--apple-green); border-radius: 50%; box-shadow: 0 0 8px var(--apple-green); }
 
+        /* ===== Developer Mode Tutorial Overlay ===== */
+        #devmode-tutorial {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 5000;
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+        #devmode-tutorial.open { display: flex; }
+        .tutorial-card {
+            background: #fff; width: 480px; max-width: 90%; max-height: 85vh;
+            border-radius: 24px; padding: 32px; overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .tutorial-card h2 { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+        .tutorial-card .tutorial-sub { font-size: 14px; color: #666; margin-bottom: 24px; }
+        .tutorial-step-item {
+            display: flex; gap: 16px; margin-bottom: 20px;
+            padding: 16px; background: #f8f9fa; border-radius: 16px;
+        }
+        .tutorial-step-num {
+            width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--apple-blue); color: #fff;
+            font-size: 14px; font-weight: 800;
+        }
+        .tutorial-step-item h3 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+        .tutorial-step-item p { font-size: 13px; color: #555; margin: 0; line-height: 1.5; }
+        .tutorial-step-item code {
+            display: inline-block; background: #e8f0fe; padding: 2px 8px;
+            border-radius: 6px; font-family: -apple-system, monospace;
+            font-size: 12px; color: var(--apple-blue); font-weight: 600;
+        }
+        .tutorial-warning {
+            display: flex; gap: 10px; padding: 14px; margin-bottom: 20px;
+            background: #fff8e1; border-radius: 12px; border: 1px solid #ffe082;
+        }
+        .tutorial-warning p { font-size: 12px; color: #795548; margin: 0; line-height: 1.5; }
+        .tutorial-actions { display: flex; gap: 10px; }
+        .tutorial-actions button {
+            flex: 1; padding: 14px; border-radius: 14px; border: none;
+            font-size: 15px; font-weight: 700; cursor: pointer;
+        }
+        .btn-tutorial-close { background: rgba(0,0,0,0.06); color: #333; }
+        .btn-tutorial-enable { background: var(--apple-blue); color: #fff; }
+
         #apple-modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:3000; display:none; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
         .modal-content { background:#fff; width:270px; border-radius:20px; text-align:center; overflow:hidden; }
         .modal-footer { display:flex; border-top:1px solid #eee; }
@@ -243,6 +288,58 @@
         </div>
     </div>
     
+    <!-- 開發者模式教學 overlay -->
+    <div id="devmode-tutorial">
+        <div class="tutorial-card">
+            <h2 data-i18n="tut_title">首次使用設定</h2>
+            <p class="tutorial-sub" data-i18n="tut_sub">iOS 16 以上需啟用「開發者模式」才能使用 GPS 模擬，只需設定一次。</p>
+
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">1</div>
+                <div>
+                    <h3 data-i18n="tut_s1_title">USB 連接 iPhone</h3>
+                    <p data-i18n="tut_s1_desc">用 USB 線連接 iPhone 到電腦，在手機上點擊「信任此電腦」。</p>
+                </div>
+            </div>
+
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">2</div>
+                <div>
+                    <h3 data-i18n="tut_s2_title">點擊「初始化連線」</h3>
+                    <p data-i18n="tut_s2_desc">點擊上方黑色按鈕，KongGoo 會自動讓「開發者模式」出現在你的手機設定中。</p>
+                </div>
+            </div>
+
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">3</div>
+                <div>
+                    <h3 data-i18n="tut_s3_title">開啟開發者模式</h3>
+                    <p><span data-i18n="tut_s3_desc_1">在 iPhone 上前往 </span><code data-i18n="tut_s3_code1">設定</code><span data-i18n="tut_s3_desc_2"> → </span><code data-i18n="tut_s3_code2">隱私權與安全性</code><span data-i18n="tut_s3_desc_3"> → 滑到最底部 → 開啟</span><code data-i18n="tut_s3_code3">開發者模式</code></p>
+                </div>
+            </div>
+
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">4</div>
+                <div>
+                    <h3 data-i18n="tut_s4_title">重新啟動手機</h3>
+                    <p data-i18n="tut_s4_desc">系統會要求重新啟動，重啟後在彈出的確認框點擊「開啟」即可。之後重新連線。</p>
+                </div>
+            </div>
+
+            <div class="tutorial-warning">
+                <span style="font-size:20px;">💡</span>
+                <div>
+                    <p data-i18n="tut_warn">如果在「隱私權與安全性」中找不到「開發者模式」，請先用 USB 連接電腦並點擊上方「初始化連線」，選項就會出現。macOS 使用者首次初始化會需要輸入電腦密碼，這是正常的。</p>
+                </div>
+            </div>
+
+            <div class="tutorial-actions">
+                <button class="btn-tutorial-close" onclick="closeTutorial()" data-i18n="tut_got_it">我知道了</button>
+                <button class="btn-tutorial-enable" onclick="closeTutorial(); reconnect();" data-i18n="tut_connect_now">立即連線</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 付款選擇模態框 -->
     <div id="payment-modal" onclick="if(event.target.id==='payment-modal') closePaymentModal()" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 3000; display: none; align-items: center; justify-content: center; backdrop-filter: blur(5px);">
         <div class="activate-modal-content" onclick="event.stopPropagation()" style="max-width: 400px; width: 90%;">
@@ -1719,7 +1816,25 @@
                 "deviceRefresh": "刷新",
                 "deviceNone": "未偵測到裝置",
                 "exportFavorites": "💾 導出最愛地點",
-                "importFavorites": "📥 導入最愛地點"
+                "importFavorites": "📥 導入最愛地點",
+                "tut_title": "首次使用設定",
+                "tut_sub": "iOS 16 以上需啟用「開發者模式」才能使用 GPS 模擬，只需設定一次。",
+                "tut_s1_title": "USB 連接 iPhone",
+                "tut_s1_desc": "用 USB 線連接 iPhone 到電腦，在手機上點擊「信任此電腦」。",
+                "tut_s2_title": "點擊「初始化連線」",
+                "tut_s2_desc": "點擊上方黑色按鈕，KongGoo 會自動讓「開發者模式」出現在你的手機設定中。",
+                "tut_s3_title": "開啟開發者模式",
+                "tut_s3_desc_1": "在 iPhone 上前往 ",
+                "tut_s3_code1": "設定",
+                "tut_s3_desc_2": " → ",
+                "tut_s3_code2": "隱私權與安全性",
+                "tut_s3_desc_3": " → 滑到最底部 → 開啟",
+                "tut_s3_code3": "開發者模式",
+                "tut_s4_title": "重新啟動手機",
+                "tut_s4_desc": "系統會要求重新啟動，重啟後在彈出的確認框點擊「開啟」即可。之後重新連線。",
+                "tut_warn": "如果在「隱私權與安全性」中找不到「開發者模式」，請先用 USB 連接電腦並點擊上方「初始化連線」，選項就會出現。macOS 使用者首次初始化會需要輸入電腦密碼，這是正常的。",
+                "tut_got_it": "我知道了",
+                "tut_connect_now": "立即連線"
             },
             'en': {
                 "initConnection": "Tap to Initialize Connection",
@@ -1766,7 +1881,25 @@
                 "deviceRefresh": "Refresh",
                 "deviceNone": "No devices found",
                 "exportFavorites": "💾 Export Favorites",
-                "importFavorites": "📥 Import Favorites"
+                "importFavorites": "📥 Import Favorites",
+                "tut_title": "First Time Setup",
+                "tut_sub": "iOS 16+ requires enabling 'Developer Mode' for GPS simulation. This only needs to be done once.",
+                "tut_s1_title": "Connect iPhone via USB",
+                "tut_s1_desc": "Connect your iPhone to the computer with a USB cable and tap 'Trust This Computer' on your phone.",
+                "tut_s2_title": "Tap 'Initialize Connection'",
+                "tut_s2_desc": "Tap the black bar above. KongGoo will automatically make 'Developer Mode' appear in your phone's settings.",
+                "tut_s3_title": "Enable Developer Mode",
+                "tut_s3_desc_1": "On your iPhone, go to ",
+                "tut_s3_code1": "Settings",
+                "tut_s3_desc_2": " → ",
+                "tut_s3_code2": "Privacy & Security",
+                "tut_s3_desc_3": " → scroll to bottom → enable",
+                "tut_s3_code3": "Developer Mode",
+                "tut_s4_title": "Restart Your Phone",
+                "tut_s4_desc": "The system will ask to restart. After restarting, tap 'Enable' in the confirmation dialog. Then reconnect.",
+                "tut_warn": "If you can't find 'Developer Mode' in Privacy & Security, connect via USB first and tap 'Initialize Connection' above — the option will then appear. macOS users will need to enter their computer password on first initialization, this is normal.",
+                "tut_got_it": "Got It",
+                "tut_connect_now": "Connect Now"
             },
             'ja': {
                 "initConnection": "タップして接続を初期化",
@@ -1813,7 +1946,25 @@
                 "deviceRefresh": "更新",
                 "deviceNone": "デバイスが見つかりません",
                 "exportFavorites": "💾 お気に入りをエクスポート",
-                "importFavorites": "📥 お気に入りをインポート"
+                "importFavorites": "📥 お気に入りをインポート",
+                "tut_title": "初回セットアップ",
+                "tut_sub": "iOS 16以降では「デベロッパモード」を有効にする必要があります（初回のみ）。",
+                "tut_s1_title": "USBでiPhoneを接続",
+                "tut_s1_desc": "USBケーブルでiPhoneをパソコンに接続し、「このコンピュータを信頼」をタップしてください。",
+                "tut_s2_title": "「接続を初期化」をタップ",
+                "tut_s2_desc": "上の黒いバーをタップすると、KongGooが自動的に「デベロッパモード」を設定に表示させます。",
+                "tut_s3_title": "デベロッパモードを有効化",
+                "tut_s3_desc_1": "iPhoneで",
+                "tut_s3_code1": "設定",
+                "tut_s3_desc_2": " → ",
+                "tut_s3_code2": "プライバシーとセキュリティ",
+                "tut_s3_desc_3": " → 一番下までスクロール → 有効化",
+                "tut_s3_code3": "デベロッパモード",
+                "tut_s4_title": "端末を再起動",
+                "tut_s4_desc": "再起動が求められます。再起動後、確認ダイアログで「有効にする」をタップしてください。",
+                "tut_warn": "「プライバシーとセキュリティ」に「デベロッパモード」が見つからない場合は、USBで接続して「接続を初期化」をタップしてください。macOSでは初回にパスワード入力が必要です。",
+                "tut_got_it": "了解",
+                "tut_connect_now": "今すぐ接続"
             },
             'ko': {
                 "initConnection": "탭하여 연결 초기화",
@@ -1860,7 +2011,25 @@
                 "deviceRefresh": "새로고침",
                 "deviceNone": "기기를 찾을 수 없습니다",
                 "exportFavorites": "💾 즐겨찾기 내보내기",
-                "importFavorites": "📥 즐겨찾기 가져오기"
+                "importFavorites": "📥 즐겨찾기 가져오기",
+                "tut_title": "처음 사용 설정",
+                "tut_sub": "iOS 16 이상에서는 GPS 시뮬레이션을 위해 '개발자 모드'를 활성화해야 합니다. 한 번만 설정하면 됩니다.",
+                "tut_s1_title": "USB로 iPhone 연결",
+                "tut_s1_desc": "USB 케이블로 iPhone을 컴퓨터에 연결하고 '이 컴퓨터 신뢰'를 탭하세요.",
+                "tut_s2_title": "'연결 초기화' 탭하기",
+                "tut_s2_desc": "위의 검은색 바를 탭하면 KongGoo가 자동으로 '개발자 모드'를 설정에 표시합니다.",
+                "tut_s3_title": "개발자 모드 활성화",
+                "tut_s3_desc_1": "iPhone에서 ",
+                "tut_s3_code1": "설정",
+                "tut_s3_desc_2": " → ",
+                "tut_s3_code2": "개인 정보 보호 및 보안",
+                "tut_s3_desc_3": " → 맨 아래로 스크롤 → 활성화",
+                "tut_s3_code3": "개발자 모드",
+                "tut_s4_title": "휴대폰 재시작",
+                "tut_s4_desc": "시스템이 재시작을 요청합니다. 재시작 후 확인 대화상자에서 '활성화'를 탭하세요. 그런 다음 다시 연결하세요.",
+                "tut_warn": "'개인 정보 보호 및 보안'에서 '개발자 모드'를 찾을 수 없는 경우, USB로 연결한 후 위의 '연결 초기화'를 탭하면 옵션이 나타납니다. macOS 사용자는 처음 초기화 시 컴퓨터 비밀번호를 입력해야 합니다.",
+                "tut_got_it": "알겠습니다",
+                "tut_connect_now": "지금 연결"
             }
         };
 
@@ -2014,18 +2183,32 @@
         
         // ========== 多語言支援結束 ==========
         
+        // ========== 開發者模式教學 ==========
+        function showDevModeTutorial() {
+            const el = document.getElementById('devmode-tutorial');
+            if (el) el.classList.add('open');
+        }
+        function closeTutorial() {
+            const el = document.getElementById('devmode-tutorial');
+            if (el) el.classList.remove('open');
+            localStorage.setItem('tutorialShown', '1');
+        }
+
         // 頁面載入時檢查授權狀態和初始化最愛地點（只執行一次）
         document.addEventListener('DOMContentLoaded', async function() {
             // 先載入語言
             await loadLanguage(currentLang);
-            
+
             checkAuthStatus();
             console.log('🚀 頁面載入，嘗試從備份檔案載入最愛地點...');
             await initDefaultFavorites();
             favoritesInitialized = true;
             renderList();
 
-            // 上線版本：不做啟動自動備份，避免產生個資檔案。
+            // 首次啟動顯示開發者模式教學
+            if (!localStorage.getItem('tutorialShown')) {
+                setTimeout(showDevModeTutorial, 800);
+            }
         });
     </script>
 </body>

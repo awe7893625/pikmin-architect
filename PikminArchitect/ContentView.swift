@@ -1334,6 +1334,15 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 }
             }
 
+            // ===== 步驟 1.5: 嘗試啟用開發者模式（讓選項出現在 iPhone 設定中）=====
+            DispatchQueue.main.async {
+                self.webView?.evaluateJavaScript("setUI('connecting', '正在準備開發者模式...')")
+            }
+            let amfiCmd = self.pythonCommand("-m pymobiledevice3 amfi enable-developer-mode --udid \(id)")
+            let amfiResult = self.shell(amfiCmd)
+            print("[reconnect] amfi enable-developer-mode: \(amfiResult.prefix(200))")
+            // 不管成功失敗都繼續（可能已經啟用、或需要隧道才能用）
+
             // ===== 步驟 2: 檢查隧道 — 非破壞性！不殺已運行的隧道 =====
             if self.isTunnelRunning() {
                 print("[reconnect] 隧道已在運行，跳過啟動（不需要密碼）")
@@ -1419,11 +1428,19 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 if !tunnelReady {
                     let lastError = self.shell("cat /tmp/pymobiledevice3_tunnel.log 2>/dev/null")
                     var errorMsg = "隧道啟動失敗"
+                    var showTutorial = false
                     if lastError.contains("Address already in use") { errorMsg = "端口 49151 被佔用，請重試" }
                     else if lastError.contains("No device") { errorMsg = "找不到設備，請確認 USB 連接" }
                     else if lastError.contains("No module named") { errorMsg = "缺少 pymobiledevice3，請安裝" }
+                    else if lastError.contains("developer") || lastError.contains("Developer") || lastError.contains("AMFI") {
+                        errorMsg = "請先啟用開發者模式"
+                        showTutorial = true
+                    }
                     DispatchQueue.main.async {
                         self.webView?.evaluateJavaScript("setUI('error', '\(errorMsg)')")
+                        if showTutorial {
+                            self.webView?.evaluateJavaScript("showDevModeTutorial()")
+                        }
                     }
                     return
                 }

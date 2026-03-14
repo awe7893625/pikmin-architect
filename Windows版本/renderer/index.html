@@ -41,6 +41,51 @@
         .apple-blue-dot { width: 14px !important; height: 14px !important; background: var(--apple-blue); border: 2.5px solid #fff; border-radius: 50%; box-shadow: 0 0 10px var(--apple-blue); }
         .preview-dot { width: 14px !important; height: 14px !important; background: none; border: 3px solid var(--apple-green); border-radius: 50%; box-shadow: 0 0 8px var(--apple-green); }
 
+        /* ===== Developer Mode Tutorial Overlay ===== */
+        #devmode-tutorial {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); z-index: 5000;
+            display: none; align-items: center; justify-content: center;
+            backdrop-filter: blur(10px);
+        }
+        #devmode-tutorial.open { display: flex; }
+        .tutorial-card {
+            background: #fff; width: 480px; max-width: 90%; max-height: 85vh;
+            border-radius: 24px; padding: 32px; overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .tutorial-card h2 { font-size: 22px; font-weight: 800; margin: 0 0 6px; }
+        .tutorial-card .tutorial-sub { font-size: 14px; color: #666; margin-bottom: 24px; }
+        .tutorial-step-item {
+            display: flex; gap: 16px; margin-bottom: 20px;
+            padding: 16px; background: #f8f9fa; border-radius: 16px;
+        }
+        .tutorial-step-num {
+            width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--apple-blue); color: #fff;
+            font-size: 14px; font-weight: 800;
+        }
+        .tutorial-step-item h3 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+        .tutorial-step-item p { font-size: 13px; color: #555; margin: 0; line-height: 1.5; }
+        .tutorial-step-item code {
+            display: inline-block; background: #e8f0fe; padding: 2px 8px;
+            border-radius: 6px; font-family: -apple-system, monospace;
+            font-size: 12px; color: var(--apple-blue); font-weight: 600;
+        }
+        .tutorial-warning {
+            display: flex; gap: 10px; padding: 14px; margin-bottom: 20px;
+            background: #fff8e1; border-radius: 12px; border: 1px solid #ffe082;
+        }
+        .tutorial-warning p { font-size: 12px; color: #795548; margin: 0; line-height: 1.5; }
+        .tutorial-actions { display: flex; gap: 10px; }
+        .tutorial-actions button {
+            flex: 1; padding: 14px; border-radius: 14px; border: none;
+            font-size: 15px; font-weight: 700; cursor: pointer;
+        }
+        .btn-tutorial-close { background: rgba(0,0,0,0.06); color: #333; }
+        .btn-tutorial-enable { background: var(--apple-blue); color: #fff; }
+
         #apple-modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:3000; display:none; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
         .modal-content { background:#fff; width:270px; border-radius:20px; text-align:center; overflow:hidden; }
         .modal-footer { display:flex; border-top:1px solid #eee; }
@@ -87,6 +132,52 @@
             <button class="lang-btn" data-lang="ja" onclick="setLanguage('ja')" style="flex:1; padding:8px; border:none; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; background:rgba(0,0,0,0.05); color:#666;">日本</button>
         </div>
         <div class="nav-section"><div class="grid" id="loc-list"></div></div>
+    </div>
+
+    <!-- 開發者模式教學 overlay -->
+    <div id="devmode-tutorial">
+        <div class="tutorial-card">
+            <h2>首次使用設定</h2>
+            <p class="tutorial-sub">iOS 16 以上需啟用「開發者模式」才能使用 GPS 模擬，只需設定一次。</p>
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">1</div>
+                <div>
+                    <h3>USB 連接 iPhone</h3>
+                    <p>用 USB 線連接 iPhone 到電腦，在手機上點擊「信任此電腦」。</p>
+                </div>
+            </div>
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">2</div>
+                <div>
+                    <h3>安裝 iTunes 或 Apple Devices</h3>
+                    <p>Windows 需要安裝 <a href="https://www.apple.com/itunes/" target="_blank" style="color:var(--apple-blue)">iTunes</a> 或 Apple Devices 才能與 iPhone 通訊。</p>
+                </div>
+            </div>
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">3</div>
+                <div>
+                    <h3>開啟開發者模式</h3>
+                    <p>在 iPhone 上前往 <code>設定</code> → <code>隱私權與安全性</code> → 滑到最底部 → 開啟 <code>開發者模式</code></p>
+                </div>
+            </div>
+            <div class="tutorial-step-item">
+                <div class="tutorial-step-num">4</div>
+                <div>
+                    <h3>重新啟動手機</h3>
+                    <p>系統會要求重新啟動，重啟後在彈出的確認框點擊「開啟」即可。之後回到 KongGoo 點擊「初始化連線」。</p>
+                </div>
+            </div>
+            <div class="tutorial-warning">
+                <span style="font-size:20px;">💡</span>
+                <div>
+                    <p>如果在「隱私權與安全性」中找不到「開發者模式」，請先用 USB 連接電腦並點擊「初始化連線」，選項就會出現。</p>
+                </div>
+            </div>
+            <div class="tutorial-actions">
+                <button class="btn-tutorial-close" onclick="closeTutorial()">我知道了</button>
+                <button class="btn-tutorial-enable" onclick="closeTutorial(); reconnect();">立即連線</button>
+            </div>
+        </div>
     </div>
 
     <div id="apple-modal">
@@ -775,10 +866,25 @@
         }
         function stopJiggle() { /* 已移除刪除/抖動模式 */ }
         function setUI(s, t) { document.getElementById('st-text').innerText=t; document.getElementById('led').style.background=(s==='online')?'#30d158':'#ff3b30'; }
-        
+
+        // 開發者模式教學
+        function showDevModeTutorial() {
+            const el = document.getElementById('devmode-tutorial');
+            if (el) el.classList.add('open');
+        }
+        function closeTutorial() {
+            const el = document.getElementById('devmode-tutorial');
+            if (el) el.classList.remove('open');
+            localStorage.setItem('tutorialShown', '1');
+        }
+
         // 頁面載入時檢查授權狀態
         document.addEventListener('DOMContentLoaded', function() {
             checkAuthStatus();
+            // 首次啟動顯示開發者模式教學
+            if (!localStorage.getItem('tutorialShown')) {
+                setTimeout(showDevModeTutorial, 800);
+            }
         });
         
         renderList();
