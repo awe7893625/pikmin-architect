@@ -126,6 +126,19 @@ if [[ -d "$APP_PATH/Contents/Resources/python" ]]; then
   rm -rf "$PY_SITE/matplotlib_inline" "$PY_SITE/matplotlib_inline-"*.dist-info 2>/dev/null || true
 fi
 
+echo "🔗 建立 lib/bin 相容性 symlinks..."
+# idevice_id 編譯時尋找 @executable_path/../lib/ 的 dylib，
+# 但我們實際放在 lib_arm64/bin_arm64，需要 symlink 讓它找到
+RES="$APP_PATH/Contents/Resources"
+for pair in "lib:lib_arm64" "bin:bin_arm64"; do
+  link="${pair%%:*}"
+  target="${pair##*:}"
+  if [[ -d "$RES/$target" && ! -e "$RES/$link" ]]; then
+    ln -s "$target" "$RES/$link"
+    echo "  ✅ $link → $target"
+  fi
+done
+
 echo "🔏 重新簽署（包含內嵌依賴）..."
 for LIB_DIR in "$APP_PATH/Contents/Resources/lib" "$APP_PATH/Contents/Resources/lib_arm64" "$APP_PATH/Contents/Resources/lib_x86_64"; do
   if [[ -d "$LIB_DIR" ]]; then
