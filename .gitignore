@@ -78,3 +78,4 @@ website/金流串接說明.md
 # website/public/downloads/*.dmg
 .vercel
 .env*.local
+*.dmg
