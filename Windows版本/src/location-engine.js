@@ -60,43 +60,99 @@ class LocationEngine {
         return 'python';
     }
 
-    // 檢查 iTunes / Apple Mobile Device Support 是否已安裝
+    // 檢查 Apple USB 驅動是否可用（支援傳統 iTunes、MS Store iTunes、Apple Devices）
     async checkiTunes() {
         if (this.itunesInstalled !== null) return this.itunesInstalled;
 
         const checks = [
-            // 方法 1: 檢查 Windows 服務
+            // 方法 0（最可靠）: 直接嘗試 pymobiledevice3 usbmux list
+            // 如果能執行就代表驅動存在，不管 iTunes 怎麼裝的
+            async () => {
+                try {
+                    const cmd = this._getCmd('usbmux list');
+                    await execAsync(cmd, { timeout: 10000 });
+                    console.log('[iTunes 檢查] pymobiledevice3 usbmux 可用');
+                    return true; // 能執行就代表驅動存在
+                } catch (e) {
+                    // 如果錯誤不是「找不到 usbmuxd」就算驅動存在
+                    const errMsg = (e.stderr || e.message || '').toLowerCase();
+                    if (errMsg.includes('usbmuxd') || errMsg.includes('no mux')) {
+                        return false; // 確實沒驅動
+                    }
+                    // 其他錯誤（如沒有設備）代表驅動是好的
+                    if (errMsg.includes('[]') || errMsg.includes('no device')) {
+                        console.log('[iTunes 檢查] 驅動存在但無設備');
+                        return true;
+                    }
+                    return false;
+                }
+            },
+            // 方法 1: 檢查傳統 iTunes 服務
             async () => {
                 try {
                     const { stdout } = await execAsync('sc query "Apple Mobile Device Service"', { timeout: 5000 });
                     return stdout.includes('RUNNING') || stdout.includes('STATE');
                 } catch { return false; }
             },
-            // 方法 2: 檢查常見安裝路徑
+            // 方法 2: 檢查 MS Store 版 Apple Devices / iTunes 服務
+            async () => {
+                try {
+                    // MS Store 版使用不同的服務名稱
+                    const { stdout } = await execAsync('sc query "AppleMobileDeviceService"', { timeout: 5000 });
+                    return stdout.includes('RUNNING') || stdout.includes('STATE');
+                } catch { return false; }
+            },
+            // 方法 3: 檢查安裝路徑（傳統 + MS Store + Apple Devices）
             async () => {
                 const paths = [
                     'C:\\Program Files\\Common Files\\Apple\\Mobile Device Support',
                     'C:\\Program Files (x86)\\Common Files\\Apple\\Mobile Device Support',
-                    'C:\\Program Files\\Common Files\\Apple\\Apple Application Support'
+                    'C:\\Program Files\\Common Files\\Apple\\Apple Application Support',
+                    // MS Store 版本的 usbmuxd.exe 路徑
+                    path.join(process.env.ProgramFiles || '', 'Common Files', 'Apple', 'Mobile Device Support', 'usbmuxd.exe'),
                 ];
                 return paths.some(p => fs.existsSync(p));
             },
-            // 方法 3: 檢查 usbmuxd 是否可用
+            // 方法 4: 直接檢查 usbmuxd 進程是否運行（不管安裝方式）
             async () => {
                 try {
-                    const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq AppleMobileDeviceService.exe"', { timeout: 5000 });
-                    return stdout.includes('AppleMobileDeviceService');
+                    const { stdout } = await execAsync('tasklist /FI "IMAGENAME eq usbmuxd.exe"', { timeout: 5000 });
+                    return stdout.includes('usbmuxd');
                 } catch { return false; }
+            },
+            // 方法 5: 檢查 Apple Mobile Device 相關進程（傳統 + MS Store）
+            async () => {
+                try {
+                    const { stdout } = await execAsync('tasklist', { timeout: 5000 });
+                    return stdout.includes('AppleMobileDeviceService') ||
+                           stdout.includes('AppleMobileDevice') ||
+                           stdout.includes('usbmuxd') ||
+                           stdout.includes('AMPDevicesAgent');
+                } catch { return false; }
+            },
+            // 方法 6: 嘗試 TCP 連接 usbmuxd 端口 27015
+            async () => {
+                return new Promise((resolve) => {
+                    const net = require('net');
+                    const sock = new net.Socket();
+                    sock.setTimeout(3000);
+                    sock.on('connect', () => { sock.destroy(); resolve(true); });
+                    sock.on('error', () => { sock.destroy(); resolve(false); });
+                    sock.on('timeout', () => { sock.destroy(); resolve(false); });
+                    sock.connect(27015, '127.0.0.1');
+                });
             }
         ];
 
         for (const check of checks) {
             if (await check()) {
                 this.itunesInstalled = true;
+                console.log('[iTunes 檢查] Apple USB 驅動已找到');
                 return true;
             }
         }
         this.itunesInstalled = false;
+        console.log('[iTunes 檢查] 未找到 Apple USB 驅動');
         return false;
     }
 
