@@ -1,7 +1,6 @@
-#!/private/var/folders/wk/r5_lh6pn1gx439g4ckfr2ymm0000gn/T/tmp.qWSIUyOuMo/venv_arm64/bin/python
+#!/private/var/folders/wk/r5_lh6pn1gx439g4ckfr2ymm0000gn/T/tmp.PbKdCfw8ED/venv_arm64/bin/python
 import sys
 from uvicorn.main import main
 if __name__ == '__main__':
-    if sys.argv[0].endswith('.exe'):
-        sys.argv[0] = sys.argv[0][:-4]
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
     sys.exit(main())

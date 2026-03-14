@@ -34,7 +34,7 @@
 		</data>
 		<key>Resources/index.html</key>
 		<data>
-		fxh8k2DRHJJCapv7K7RR7tq48wY=
+		bkv1DeoVPrfIFQbpXiD5yKNF9Qg=
 		</data>
 		<key>Resources/ja.json</key>
 		<data>
@@ -44,9 +44,13 @@
 		<data>
 		v90MMtv7ANSFUTAE6SvrSn6nD7k=
 		</data>
+		<key>Resources/location_helper.py</key>
+		<data>
+		nM1gliWQ/wIlJjfh40PZgtCioB4=
+		</data>
 		<key>Resources/zh-TW.json</key>
 		<data>
-		brcpRpe1mbV97HhJYHFmJCwMbFQ=
+		j81IxG+EH/a7TKw6LjzYugdlHF0=
 		</data>
 	</dict>
 	<key>files2</key>
@@ -113,7 +117,7 @@
 		<dict>
 			<key>hash2</key>
 			<data>
-			lpbLo1UIQcmv5jmldO36O5HtBgcCyOK1dIaKYK4Qc9Q=
+			G+L98AeFMpFmfZyoLm/CfIQDTGYNiRJqKzYIGR0HrTE=
 			</data>
 		</dict>
 		<key>Resources/ja.json</key>
@@ -130,11 +134,18 @@
 			Xm9YqF2bKydtV//34v54fCNmDo2cwhYJd5S1uJl8JZg=
 			</data>
 		</dict>
+		<key>Resources/location_helper.py</key>
+		<dict>
+			<key>hash2</key>
+			<data>
+			nw71ZlSglqIuUwK+Jg9FyML6EApskIsuzIk6NsqLL+o=
+			</data>
+		</dict>
 		<key>Resources/zh-TW.json</key>
 		<dict>
 			<key>hash2</key>
 			<data>
-			YmD+92/Jg4I+uoR1tfMdpbOWTafGv0kYuJSQaDgbZuk=
+			vYgCw1aQEoZlSIlc+lx98yJTgR6w5KsNg2jzwaKaEso=
 			</data>
 		</dict>
 	</dict>

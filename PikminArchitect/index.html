@@ -1273,10 +1273,9 @@
         }
 
         function formatDeviceLabel(device) {
-            const name = device.DeviceName || device.Identifier || 'iPhone';
-            const conn = device.ConnectionType ? ` · ${device.ConnectionType}` : '';
-            const suffix = device.Identifier ? ` (${device.Identifier.slice(-6)})` : '';
-            return `${name}${conn}${suffix}`;
+            const name = device.DeviceName || 'iPhone';
+            const ver = device.ProductVersion ? ` · iOS ${device.ProductVersion}` : '';
+            return `${name}${ver}`;
         }
 
         function applyDeviceList(devices) {

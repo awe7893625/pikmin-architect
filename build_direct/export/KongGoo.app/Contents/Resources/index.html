@@ -78,7 +78,7 @@
         .modal-footer { display:flex; border-top:1px solid #eee; }
         .modal-btn { flex:1; padding:15px; border:none; background:none; font-size:17px; color:var(--apple-blue); cursor:pointer; }
         
-        /* 激活按鈕（右下角） */
+        /* 授權按鈕（右下角） */
         #activate-btn {
             position: fixed;
             bottom: 20px;
@@ -126,6 +126,7 @@
 </head>
 <body>
     <div id="map"></div>
+    <button id="follow-btn" onclick="toggleFollow()" title="跟隨位置" style="position:fixed;bottom:30px;left:30px;z-index:1000;width:44px;height:44px;border-radius:50%;border:none;background:var(--glass);backdrop-filter:blur(20px);box-shadow:0 4px 15px rgba(0,0,0,0.15);cursor:pointer;display:none;align-items:center;justify-content:center;font-size:22px;color:#999;transition:color 0.2s;">&#9678;</button>
     <div class="glass-panel" onclick="event.stopPropagation()">
         <div class="island" onclick="reconnect()">
             <span id="st-text" data-i18n="initConnection"> 點擊初始化連線</span>
@@ -143,11 +144,24 @@
             <div class="tab" id="t3" onclick="setMode('fav')" data-i18n="favorites">最愛</div>
         </div>
         <div id="trial-status-bar" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:13px; margin-bottom:12px; text-align:center; display:block;">
-            <span data-i18n="remainingTrial">🎁 免費試用</span>: <span id="remaining-trial-count-bar" data-i18n="loading">載入中...</span>
+            <span data-i18n="remainingTrial">🎁 剩餘免費次數</span>: <span id="remaining-trial-count-bar" data-i18n="loading">載入中...</span>
         </div>
         <div class="action-row">
             <button class="btn-action btn-go" onclick="run()" data-i18n="go">GO</button>
             <button class="btn-action btn-stop" onclick="stopAll()" data-i18n="stop">STOP</button>
+        </div>
+        <div id="route-settings" style="display:none; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <span style="font-size:13px; font-weight:700; color:#333;">時速</span>
+                <span id="speed-value" style="font-size:13px; font-weight:600; color:var(--apple-blue);">16.0 km/h</span>
+            </div>
+            <input type="range" id="speed-slider" min="5" max="20" step="0.5" value="16"
+                   style="width:100%; margin-bottom:10px; accent-color:var(--apple-blue);"
+                   oninput="document.getElementById('speed-value').textContent = parseFloat(this.value).toFixed(1) + ' km/h'">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <input type="checkbox" id="loop-checkbox" checked style="accent-color:var(--apple-blue);">
+                <label for="loop-checkbox" style="font-size:13px; font-weight:600; color:#333;">循環路線</label>
+            </div>
         </div>
         <div id="fav-ui" style="display:none; margin-bottom:12px;">
             <button onclick="openModal()" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:12px; font-weight:700; margin-bottom:8px;" data-i18n="addCurrentLocation">＋ 加入目前位置</button>
@@ -156,14 +170,14 @@
         <div id="auth-ui" style="display:none; margin-bottom:12px; padding:12px; background:rgba(255,193,7,0.1); border-radius:12px;">
             <div style="font-size:12px; color:#666; margin-bottom:8px;" data-i18n="authorizationStatus">授權狀態</div>
             <div id="trial-status" style="width:100%; padding:12px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border-radius:10px; font-weight:700; font-size:14px; margin-bottom:8px; text-align:center;">
-                <span data-i18n="remainingTrial">🎁 免費試用</span>: <span id="remaining-trial-count" data-i18n="loading">載入中...</span>
+                <span data-i18n="remainingTrial">🎁 剩餘免費次數</span>: <span id="remaining-trial-count" data-i18n="loading">載入中...</span>
             </div>
             <button onclick="checkAuthStatus()" style="width:100%; padding:10px; background:rgba(0,122,255,0.1); color:var(--apple-blue); border:none; border-radius:10px; font-weight:600; font-size:13px; margin-bottom:8px;" data-i18n="checkAuth">🔍 檢查授權</button>
             <div style="margin-bottom:8px; display:flex; gap:8px;">
                 <button onclick="showPaymentOptions()" style="flex:1; padding:10px; background:var(--apple-blue); color:white; border:none; border-radius:10px; font-weight:600; font-size:13px;" data-i18n="buyLicense">💳 購買授權</button>
             </div>
             <input type="text" id="license-input" data-i18n-placeholder="licenseInput" placeholder="輸入授權碼" style="width:100%; padding:10px; border-radius:10px; border:1px solid #ddd; font-size:13px; margin-bottom:8px; box-sizing:border-box;">
-            <button onclick="activateLicense()" style="width:100%; padding:10px; background:rgba(52,199,89,0.1); color:#34C759; border:none; border-radius:10px; font-weight:600; font-size:13px;" data-i18n="activateLicense">✅ 激活授權碼</button>
+            <button onclick="activateLicense()" style="width:100%; padding:10px; background:rgba(52,199,89,0.1); color:#34C759; border:none; border-radius:10px; font-weight:600; font-size:13px;" data-i18n="activateLicense">✅ 授權</button>
             <!-- ⚠️ P0 必修 3：Debug Snapshot 顯示區域（開發模式） -->
             <div id="auth-debug-snapshot" style="display: none;"></div>
         </div>
@@ -180,10 +194,10 @@
         </div>
     </div>
     
-    <!-- 激活按鈕（右下角） -->
-    <button id="activate-btn" onclick="openActivateModal()" data-i18n-title="activateLicense" title="激活授權碼">🔑</button>
-    
-    <!-- 激活模態框 -->
+    <!-- 授權按鈕（右下角） -->
+    <button id="activate-btn" onclick="openActivateModal()" data-i18n-title="activateLicense" title="授權">🔑</button>
+
+    <!-- 授權模態框 -->
     <div id="activate-modal" onclick="if(event.target.id==='activate-modal') closeActivateModal()">
         <div class="activate-modal-content" onclick="event.stopPropagation()">
             <h3 style="margin-bottom: 15px;">設定</h3>
@@ -199,10 +213,10 @@
                 </select>
             </div>
             
-            <!-- 激活授權碼 -->
+            <!-- 授權碼 -->
             <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #666;" data-i18n="activateLicense">激活授權碼</label>
-                <input type="text" id="activate-license-input" data-i18n-placeholder="licenseInput" placeholder="輸入激活碼" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box;">
+                <label style="display: block; margin-bottom: 5px; font-size: 13px; color: #666;" data-i18n="activateLicense">授權</label>
+                <input type="text" id="activate-license-input" data-i18n-placeholder="licenseInput" placeholder="輸入授權碼" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ddd; font-size: 14px; box-sizing: border-box;">
             </div>
             
             <!-- 購買授權 -->
@@ -224,7 +238,7 @@
             
             <div style="display: flex; gap: 10px;">
                 <button class="modal-btn" style="color: red; flex: 1;" onclick="closeActivateModal()" data-i18n="cancel">取消</button>
-                <button class="modal-btn" style="flex: 1;" onclick="activateLicenseFromButton()" data-i18n="activateLicenseButton">激活</button>
+                <button class="modal-btn" style="flex: 1;" onclick="activateLicenseFromButton()" data-i18n="activateLicenseButton">授權</button>
             </div>
         </div>
     </div>
@@ -300,7 +314,7 @@
                     <div style="font-size: 11px; color: #666; padding: 8px; background: rgba(0,0,0,0.05); border-radius: 4px; margin-top: 8px;">
                         <strong>🔍 授權狀態快照</strong><br>
                         Device ID Hash: ${snapshot.deviceIdHash.substring(0, 8)}...<br>
-                        已激活: ${snapshot.isActivated ? '✅ 是' : '❌ 否'}<br>
+                        已授權: ${snapshot.isActivated ? '✅ 是' : '❌ 否'}<br>
                         剩餘試用: ${snapshot.trialCount} 次<br>
                         最後檢查: ${new Date(snapshot.lastCheckTime).toLocaleString()}<br>
                         來源: ${snapshot.source}<br>
@@ -325,6 +339,8 @@
             const tabMap = {'tp':'t1', 'route':'t2', 'fav':'t3'};
             document.getElementById(tabMap[m]).classList.add('active');
             document.getElementById('fav-ui').style.display = (m==='fav')?'block':'none';
+            var routeSettings = document.getElementById('route-settings');
+            if (routeSettings) routeSettings.style.display = (m === 'route') ? 'block' : 'none';
             renderList();
         }
         
@@ -359,7 +375,7 @@
         function activateLicenseFromButton() {
             const key = document.getElementById('activate-license-input').value.trim();
             if(!key) {
-                alert('請輸入激活碼');
+                alert('請輸入授權碼');
                 return;
             }
             window.webkit.messageHandlers.bridge.postMessage({ act: 'activateLicense', licenseKey: key });
@@ -1171,7 +1187,7 @@
             
             // 如果已付費，直接執行功能
             if (globalAuthState.isPaid) {
-                console.log('✅ [功能使用] 設備已激活，直接執行功能:', feature);
+                console.log('✅ [功能使用] 設備已授權，直接執行功能:', feature);
                 executeFeature(feature);
                 return;
             }
@@ -1199,7 +1215,12 @@
                 window.webkit.messageHandlers.bridge.postMessage({ act: 'tp', la: pendingCoord.la, lo: pendingCoord.lo });
                 targetMarker.remove();
             } else if (feature === 'route' && routePoints.length > 1) {
-                window.webkit.messageHandlers.bridge.postMessage({ act: 'startRoute', pts: routePoints });
+                var speedSlider = document.getElementById('speed-slider');
+                var loopCheckbox = document.getElementById('loop-checkbox');
+                var kmh = speedSlider ? parseFloat(speedSlider.value) : 16.0;
+                var loop = loopCheckbox ? loopCheckbox.checked : true;
+                window.webkit.messageHandlers.bridge.postMessage({ act: 'startRoute', pts: routePoints, kmh: kmh, loop: loop });
+                targetMarker.remove();
             }
         }
         
@@ -1252,10 +1273,9 @@
         }
 
         function formatDeviceLabel(device) {
-            const name = device.DeviceName || device.Identifier || 'iPhone';
-            const conn = device.ConnectionType ? ` · ${device.ConnectionType}` : '';
-            const suffix = device.Identifier ? ` (${device.Identifier.slice(-6)})` : '';
-            return `${name}${conn}${suffix}`;
+            const name = device.DeviceName || 'iPhone';
+            const ver = device.ProductVersion ? ` · iOS ${device.ProductVersion}` : '';
+            return `${name}${ver}`;
         }
 
         function applyDeviceList(devices) {
@@ -1370,9 +1390,47 @@
         function stopAll() {
             window.webkit.messageHandlers.bridge.postMessage({ act: 'stop' });
             routePoints=[]; pathLine.setLatLngs([]); targetMarker.remove();
+            isWalking = false; followMode = false; updateFollowBtn();
         }
 
-        function syncLocation(la, lo) { pikmin.setLatLng([la, lo]); }
+        // ========== 走路跟隨模式 ==========
+        var followMode = false;
+        var isWalking = false;
+
+        map.on('dragstart', function() {
+            if (followMode) { followMode = false; updateFollowBtn(); }
+        });
+
+        function updateFollowBtn() {
+            var btn = document.getElementById('follow-btn');
+            if (!btn) return;
+            btn.style.display = isWalking ? 'flex' : 'none';
+            if (followMode) { btn.classList.add('active'); btn.style.color = 'var(--apple-blue)'; }
+            else { btn.classList.remove('active'); btn.style.color = '#999'; }
+        }
+
+        window.toggleFollow = function() {
+            followMode = !followMode;
+            updateFollowBtn();
+            if (followMode) { map.panTo(pikmin.getLatLng(), { animate: true }); }
+        };
+
+        window.syncLocation = function(la, lo) {
+            pikmin.setLatLng([la, lo]);
+            if (followMode) {
+                if (!window._syncCount) window._syncCount = 0;
+                window._syncCount++;
+                if (window._syncCount % 3 === 0) { map.panTo([la, lo], { animate: true }); }
+            }
+        };
+
+        window.setFollowMode = function(enabled) {
+            followMode = enabled;
+            isWalking = enabled;
+            updateFollowBtn();
+        };
+        // ========== 走路跟隨模式結束 ==========
+
         function reconnect() { window.webkit.messageHandlers.bridge.postMessage({ act: 'reconnect' }); }
         function openModal() {
             pendingCoord = { la: pikmin.getLatLng().lat, lo: pikmin.getLatLng().lng };
@@ -1613,38 +1671,213 @@
         // ========== 多語言支援 ==========
         let currentLang = localStorage.getItem('language') || 'zh-TW';
         let translations = {};
-        
-        // 載入語言檔案
+
+        // 內嵌翻譯資料（避免 WKWebView fetch file:// 失敗）
+        const allTranslations = {
+            'zh-TW': {
+                "initConnection": "點擊初始化連線",
+                "reconnectClearing": " 正在清除舊連線...",
+                "reconnectRequestingPrivilege": " 正在請求權限...",
+                "reconnectStartingTunnel": " 正在建立隧道...",
+                "reconnectTunnelStartFailed": "⚠️ 無法啟動隧道進程（請重試或手動重啟 tunneld）",
+                "reconnectAlreadyOnline": " 已連線（沿用既有隧道）",
+                "searchPlaceholder": "🔍 搜尋地點...",
+                "teleport": "瞬移",
+                "route": "散花",
+                "favorites": "最愛",
+                "realTrack": "真實軌跡",
+                "go": "GO",
+                "stop": "STOP",
+                "addCurrentLocation": "＋ 加入目前位置",
+                "updateAddressCategory": "📍 更新地址分類",
+                "remainingTrial": "🎁 剩餘免費次數",
+                "loading": "載入中...",
+                "checkAuth": "🔍 檢查授權",
+                "licenseInput": "輸入授權碼",
+                "activateLicense": "✅ 授權",
+                "activateLicenseButton": "授權",
+                "saveFavorite": "儲存最愛",
+                "cancel": "取消",
+                "save": "儲存",
+                "name": "名稱",
+                "language": "語言",
+                "authorizationStatus": "授權狀態",
+                "buyLicense": "💳 購買授權",
+                "backupFavorites": "💾 備份最愛地點到檔案",
+                "selectPaymentPlan": "選擇付款方案",
+                "annualPlan": "年費方案",
+                "oneYearLicense": "1 年授權",
+                "recommended": "推薦",
+                "lifetimePlan": "買斷方案",
+                "permanentLicense": "永久授權",
+                "unlimitedUse": "已購買，無限制使用",
+                "timesPurchaseLicense": "0 次（請購買授權）",
+                "times": "次",
+                "trialUsedUpAlert": "試用次數已用完，請購買授權",
+                "deviceSelect": "裝置",
+                "deviceAuto": "自動選擇",
+                "deviceRefresh": "刷新",
+                "deviceNone": "未偵測到裝置",
+                "exportFavorites": "💾 導出最愛地點",
+                "importFavorites": "📥 導入最愛地點"
+            },
+            'en': {
+                "initConnection": "Tap to Initialize Connection",
+                "reconnectClearing": " Clearing old connection...",
+                "reconnectRequestingPrivilege": " Requesting permission...",
+                "reconnectStartingTunnel": " Starting tunnel...",
+                "reconnectTunnelStartFailed": "⚠️ Failed to start tunnel process (please retry or restart tunneld manually).",
+                "reconnectAlreadyOnline": " Connected (reuse existing tunnel)",
+                "searchPlaceholder": "🔍 Search location...",
+                "teleport": "Teleport",
+                "route": "Route",
+                "favorites": "Favorites",
+                "realTrack": "Real Track",
+                "go": "GO",
+                "stop": "STOP",
+                "addCurrentLocation": "＋ Add Current Location",
+                "updateAddressCategory": "📍 Update Address Category",
+                "remainingTrial": "🎁 Remaining Free Trials",
+                "loading": "Loading...",
+                "checkAuth": "🔍 Check Authorization",
+                "licenseInput": "Enter License Code",
+                "activateLicense": "✅ Activate License",
+                "activateLicenseButton": "Activate",
+                "saveFavorite": "Save Favorite",
+                "cancel": "Cancel",
+                "save": "Save",
+                "name": "Name",
+                "language": "Language",
+                "authorizationStatus": "Authorization Status",
+                "buyLicense": "💳 Purchase License",
+                "backupFavorites": "💾 Backup Favorites to File",
+                "selectPaymentPlan": "Select Payment Plan",
+                "annualPlan": "Annual Plan",
+                "oneYearLicense": "1 Year License",
+                "recommended": "Recommended",
+                "lifetimePlan": "Lifetime Plan",
+                "permanentLicense": "Permanent License",
+                "unlimitedUse": "Purchased, Unlimited Use",
+                "timesPurchaseLicense": "0 times (Please Purchase License)",
+                "times": "times",
+                "trialUsedUpAlert": "Trial count exhausted, please purchase license",
+                "deviceSelect": "Device",
+                "deviceAuto": "Auto",
+                "deviceRefresh": "Refresh",
+                "deviceNone": "No devices found",
+                "exportFavorites": "💾 Export Favorites",
+                "importFavorites": "📥 Import Favorites"
+            },
+            'ja': {
+                "initConnection": "タップして接続を初期化",
+                "reconnectClearing": " 古い接続をクリア中...",
+                "reconnectRequestingPrivilege": " 権限を要求中...",
+                "reconnectStartingTunnel": " トンネルを起動中...",
+                "reconnectTunnelStartFailed": "⚠️ トンネルの起動に失敗しました（再試行するか、tunneld を手動で再起動してください）。",
+                "reconnectAlreadyOnline": " 接続済み（既存トンネルを使用）",
+                "searchPlaceholder": "🔍 場所を検索...",
+                "teleport": "テレポート",
+                "route": "ルート",
+                "favorites": "お気に入り",
+                "realTrack": "実軌跡",
+                "go": "GO",
+                "stop": "STOP",
+                "addCurrentLocation": "＋ 現在地を追加",
+                "updateAddressCategory": "📍 住所分類を更新",
+                "remainingTrial": "🎁 残り無料トライアル",
+                "loading": "読み込み中...",
+                "checkAuth": "🔍 認証を確認",
+                "licenseInput": "ライセンスコードを入力",
+                "activateLicense": "✅ ライセンスを有効化",
+                "activateLicenseButton": "有効化",
+                "saveFavorite": "お気に入りを保存",
+                "cancel": "キャンセル",
+                "save": "保存",
+                "name": "名前",
+                "language": "言語",
+                "authorizationStatus": "認証ステータス",
+                "buyLicense": "💳 ライセンスを購入",
+                "backupFavorites": "💾 お気に入りをファイルにバックアップ",
+                "selectPaymentPlan": "支払いプランを選択",
+                "annualPlan": "年間プラン",
+                "oneYearLicense": "1年ライセンス",
+                "recommended": "おすすめ",
+                "lifetimePlan": "永久プラン",
+                "permanentLicense": "永久ライセンス",
+                "unlimitedUse": "購入済み、無制限使用",
+                "timesPurchaseLicense": "0回（ライセンスを購入してください）",
+                "times": "回",
+                "trialUsedUpAlert": "トライアル回数が使い切りました。ライセンスを購入してください",
+                "deviceSelect": "デバイス",
+                "deviceAuto": "自動",
+                "deviceRefresh": "更新",
+                "deviceNone": "デバイスが見つかりません",
+                "exportFavorites": "💾 お気に入りをエクスポート",
+                "importFavorites": "📥 お気に入りをインポート"
+            },
+            'ko': {
+                "initConnection": "탭하여 연결 초기화",
+                "reconnectClearing": " 이전 연결 정리 중...",
+                "reconnectRequestingPrivilege": " 권한 요청 중...",
+                "reconnectStartingTunnel": " 터널 시작 중...",
+                "reconnectTunnelStartFailed": "⚠️ 터널 프로세스를 시작할 수 없습니다(다시 시도하거나 tunneld 를 수동으로 재시작하세요).",
+                "reconnectAlreadyOnline": " 연결됨(기존 터널 사용)",
+                "searchPlaceholder": "🔍 위치 검색...",
+                "teleport": "순간이동",
+                "route": "경로",
+                "favorites": "즐겨찾기",
+                "realTrack": "실제 궤적",
+                "go": "GO",
+                "stop": "STOP",
+                "addCurrentLocation": "＋ 현재 위치 추가",
+                "updateAddressCategory": "📍 주소 분류 업데이트",
+                "remainingTrial": "🎁 남은 무료 체험",
+                "loading": "로딩 중...",
+                "checkAuth": "🔍 인증 확인",
+                "licenseInput": "라이선스 코드 입력",
+                "activateLicense": "✅ 라이선스 활성화",
+                "activateLicenseButton": "활성화",
+                "saveFavorite": "즐겨찾기 저장",
+                "cancel": "취소",
+                "save": "저장",
+                "name": "이름",
+                "language": "언어",
+                "authorizationStatus": "인증 상태",
+                "buyLicense": "💳 라이선스 구매",
+                "backupFavorites": "💾 즐겨찾기를 파일로 백업",
+                "selectPaymentPlan": "결제 플랜 선택",
+                "annualPlan": "연간 플랜",
+                "oneYearLicense": "1년 라이선스",
+                "recommended": "추천",
+                "lifetimePlan": "평생 플랜",
+                "permanentLicense": "영구 라이선스",
+                "unlimitedUse": "구매 완료, 무제한 사용",
+                "timesPurchaseLicense": "0회 (라이선스를 구매해주세요)",
+                "times": "회",
+                "trialUsedUpAlert": "체험 횟수가 소진되었습니다. 라이선스를 구매해주세요",
+                "deviceSelect": "기기",
+                "deviceAuto": "자동",
+                "deviceRefresh": "새로고침",
+                "deviceNone": "기기를 찾을 수 없습니다",
+                "exportFavorites": "💾 즐겨찾기 내보내기",
+                "importFavorites": "📥 즐겨찾기 가져오기"
+            }
+        };
+
+        // 載入語言（直接從內嵌資料讀取，不用 fetch）
         async function loadLanguage(lang) {
             console.log('🌐 [語言] 載入語言:', lang);
-            const paths = [
-                `locales/${lang}.json`,
-                `./locales/${lang}.json`,
-                `../locales/${lang}.json`,
-                `PikminArchitect/locales/${lang}.json`
-            ];
-            
-            for (const path of paths) {
-                try {
-                    const response = await fetch(path);
-                    if (response.ok) {
-                        translations = await response.json();
-                        currentLang = lang;
-                        localStorage.setItem('language', lang);
-                        console.log('✅ [語言] 語言檔案載入成功:', path, translations);
-                        applyTranslations();
-                        // 更新語言選擇器
-                        const langSelect = document.getElementById('language-select');
-                        if (langSelect) langSelect.value = lang;
-                        return;
-                    }
-                } catch (e) {
-                    console.warn('⚠️ [語言] 無法從路徑載入:', path, e);
-                    continue;
-                }
+            if (allTranslations[lang]) {
+                translations = allTranslations[lang];
+                currentLang = lang;
+                localStorage.setItem('language', lang);
+                console.log('✅ [語言] 語言載入成功:', lang, '翻譯鍵數量:', Object.keys(translations).length);
+                applyTranslations();
+                const langSelect = document.getElementById('language-select');
+                if (langSelect) langSelect.value = lang;
+            } else {
+                console.error('❌ [語言] 不支援的語言:', lang);
             }
-            console.error('❌ [語言] 無法載入語言檔案:', lang);
-            alert('無法載入語言檔案: ' + lang);
         }
         
         // 應用翻譯（修正：更強力的 re-render 機制，確保 WKWebView 完全更新）

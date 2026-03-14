@@ -534,7 +534,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                             if self.helperReady {
                                 self.blastCurrentPosition()
                                 DispatchQueue.main.async {
-                                    self.webView?.evaluateJavaScript("setUI('online', '已連線（自動恢復）')")
+                                    self.webView?.evaluateJavaScript("setUI('online', ' 已連線（自動恢復）')")
                                 }
                             }
                         }
@@ -601,7 +601,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         if self.helperReady {
                             self.blastCurrentPosition()
                             DispatchQueue.main.async {
-                                self.webView?.evaluateJavaScript("setUI('online', '已連線（自動恢復）')")
+                                self.webView?.evaluateJavaScript("setUI('online', ' 已連線（自動恢復）')")
                             }
                         } else {
                             DispatchQueue.main.async {
@@ -1475,10 +1475,27 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 }
             }
 
+            // 取得設備名稱和 iOS 版本用於顯示
+            let connectedDevices = self.listConnectedDevices()
+            let currentUDID = self.effectiveUDID()
+            let matchedDevice = connectedDevices.first(where: {
+                ($0["UniqueDeviceID"] ?? $0["Identifier"] ?? "") == currentUDID
+            }) ?? connectedDevices.first
+            let devName = matchedDevice?["DeviceName"] ?? "iPhone"
+            let iosVer = matchedDevice?["ProductVersion"] ?? ""
+
             DispatchQueue.main.async {
                 if self.helperReady {
-                    self.webView?.evaluateJavaScript("setUI('online', '已連線 (\(self.effectiveUDID().suffix(6)))')")
+                    let statusText: String
+                    if !iosVer.isEmpty {
+                        statusText = " 已連線 — \(devName) (iOS \(iosVer))"
+                    } else {
+                        statusText = " 已連線 — \(devName)"
+                    }
+                    self.webView?.evaluateJavaScript("setUI('online', '\(self.escapeForJS(statusText))')")
                     self.startTunnelWatchdog()
+                    // 連線成功後刷新裝置列表（包含完整資訊）
+                    self.sendDeviceListToWeb(connectedDevices)
                     print("[reconnect] 連線成功！Helper + Watchdog 已就緒")
                 } else {
                     self.webView?.evaluateJavaScript("setUI('error', '連線失敗，請重試')")
@@ -2380,6 +2397,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 }
                 var device: [String: String] = ["Identifier": identifier]
                 if let name = item["DeviceName"] as? String { device["DeviceName"] = name }
+                if let ver = item["ProductVersion"] as? String { device["ProductVersion"] = ver }
+                if let ptype = item["ProductType"] as? String { device["ProductType"] = ptype }
                 device["ConnectionType"] = "USB"  // 統一標記為 USB
                 if let unique = item["UniqueDeviceID"] as? String { device["UniqueDeviceID"] = unique }
                 return device
