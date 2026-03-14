@@ -209,12 +209,15 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
 
         // 1) 優先使用 App 內建 Python（完整版 DMG 已含 pymobiledevice3，朋友不需自己安裝）
-        //    只要檔案存在就用，不依賴 shell 檢查（檢查時可能缺 DYLD_LIBRARY_PATH 而誤判）
+        //    但必須驗證它能實際執行（venv 可能缺 Python3 framework → dyld error）
         if FileManager.default.fileExists(atPath: bundledPythonPath) {
-            resolvedPythonPath = bundledPythonPath
-            // 內建版已打包 pymobiledevice3，跳過自動安裝
-            pymobiledevice3Installed = true
-            return bundledPythonPath
+            if isPythonRunnable(bundledPythonPath) {
+                resolvedPythonPath = bundledPythonPath
+                pymobiledevice3Installed = true
+                return bundledPythonPath
+            } else {
+                print("⚠️ [Python] 內建 Python 無法執行，回退到系統 Python")
+            }
         }
 
         // 2) 回退：Homebrew / 系統 Python（需可執行且會嘗試自動安裝 pymobiledevice3）
@@ -399,9 +402,9 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             }
         }
 
-        let waitResult = readySemaphore.wait(timeout: .now() + 12.0)
+        let waitResult = readySemaphore.wait(timeout: .now() + 6.0)
         if waitResult == .timedOut && !gotReady {
-            print("⚠️ [Helper] 12 秒內未收到 READY")
+            print("⚠️ [Helper] 6 秒內未收到 READY")
         }
     }
 
@@ -772,7 +775,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 print("❌ [外部連結] 無效的 URL")
             }
         case "activateLicense":
-            // 激活授權碼
+            // 授權碼驗證
             if let licenseKey = dict["licenseKey"] as? String {
                 self.activateLicense(licenseKey: licenseKey)
             } else {
@@ -941,7 +944,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     }
 
     private func apiBaseURL() -> String {
-        // 預設一律走 production（避免 Debug build 沒開本地 server 就「激活失效」）
+        // 預設一律走 production（避免 Debug build 沒開本地 server 就「授權失效」）
         // 如需本地測試，可在 Scheme → Run → Arguments → Environment Variables 設定：
         // KONGGOO_API_BASE=http://localhost:3001/api
         let env = ProcessInfo.processInfo.environment
@@ -1433,7 +1436,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             DispatchQueue.main.async {
                 self.webView?.evaluateJavaScript("setUI('connecting', '等待設備連線...')")
             }
-            Thread.sleep(forTimeInterval: 3.0)
+            Thread.sleep(forTimeInterval: 1.0)
 
             // 更新裝置列表
             let devices = self.listConnectedDevices()
@@ -1451,18 +1454,16 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 self.sendDeviceListToWeb(devices)
             }
 
-            // 啟動 Helper（最多重試 3 次）
+            // 啟動 Helper（最多重試 2 次）
             self.startHelper()
-            Thread.sleep(forTimeInterval: 2.0)
 
             var helperAttempts = 0
-            while !self.helperReady && helperAttempts < 3 {
+            while !self.helperReady && helperAttempts < 2 {
                 helperAttempts += 1
-                print("[reconnect] Helper 未就緒，重試 \(helperAttempts)/3")
+                print("[reconnect] Helper 未就緒，重試 \(helperAttempts)/2")
                 self.stopHelper()
-                Thread.sleep(forTimeInterval: 1.0)
+                Thread.sleep(forTimeInterval: 0.5)
                 self.startHelper()
-                Thread.sleep(forTimeInterval: 2.0)
             }
 
             // HTTP 驗證
@@ -1904,7 +1905,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         }
     }
     
-    // 激活授權碼
+    // 授權碼驗證
     private func activateLicense(licenseKey: String) {
         let apiBaseURL = apiBaseURL()
         let deviceId = getDeviceId()
@@ -1936,7 +1937,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             return
         }
         
-        print("📤 [授權] 發送激活請求: deviceId=\(deviceId), licenseKey=\(licenseKey)")
+        print("📤 [授權] 發送授權請求: deviceId=\(deviceId), licenseKey=\(licenseKey)")
         
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
@@ -1960,8 +1961,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
             print("📋 [授權] HTTP 狀態碼: \(httpResponse.statusCode)")
             
             if httpResponse.statusCode == 200 {
-                // 激活成功
-                print("✅ [授權] HTTP 200 - 激活請求成功")
+                // 授權成功
+                print("✅ [授權] HTTP 200 - 授權請求成功")
                 
                 // 解析響應數據
                 if let data = data {
@@ -1974,18 +1975,18 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         print("✅ [授權] JSON 解析成功: \(json)")
                         
                         if let success = json["success"] as? Bool, success {
-                            print("✅ [授權] 服務器確認激活成功")
+                            print("✅ [授權] 服務器確認授權成功")
                             DispatchQueue.main.async {
                                 // 清除本地存儲的試用數據
                                 self.webView?.evaluateJavaScript("""
                                     localStorage.removeItem('favLocs');
                                     localStorage.removeItem('tpLocs');
-                                    console.log('✅ 授權碼激活成功，清除本地存儲');
+                                    console.log('✅ 授權碼驗證成功，清除本地存儲');
                                 """)
                                 
-                                // 直接更新 UI 為已激活狀態（強制更新）
+                                // 直接更新 UI 為已授權狀態（強制更新）
                                 self.webView?.evaluateJavaScript("""
-                                    console.log('🔄 強制更新 UI 為已激活狀態');
+                                    console.log('🔄 強制更新 UI 為已授權狀態');
                                     // 先更新狀態
                                     updateTrialStatus(null, true);
                                     // 強制更新頂部狀態欄（確保完全隱藏）
@@ -2008,12 +2009,12 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                                         authUI.style.height = '0';
                                         authUI.style.overflow = 'hidden';
                                     }
-                                    console.log('✅ UI 已更新為已激活狀態，所有試用次數顯示已隱藏');
+                                    console.log('✅ UI 已更新為已授權狀態，所有試用次數顯示已隱藏');
                                 """)
                                 
                                 // 顯示成功訊息
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                    self.webView?.evaluateJavaScript("alert('✅ 授權碼激活成功！\\n\\nApp 已解鎖所有功能')")
+                                    self.webView?.evaluateJavaScript("alert('✅ 授權成功！\\n\\nApp 已解鎖所有功能')")
                                 }
                                 
                                 // 等待一下再檢查狀態，確保服務器已更新
@@ -2024,7 +2025,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         } else {
                             print("⚠️ [授權] 服務器響應 success=false")
                             DispatchQueue.main.async {
-                                self.webView?.evaluateJavaScript("alert('⚠️ 激活請求已發送，正在驗證...')")
+                                self.webView?.evaluateJavaScript("alert('⚠️ 授權請求已發送，正在驗證...')")
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                     self.checkAuthStatus()
                                 }
@@ -2033,7 +2034,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     } else {
                         print("❌ [授權] JSON 解析失敗")
                         DispatchQueue.main.async {
-                            self.webView?.evaluateJavaScript("alert('✅ 激活請求已發送，正在驗證...')")
+                            self.webView?.evaluateJavaScript("alert('✅ 授權請求已發送，正在驗證...')")
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 self.checkAuthStatus()
                             }
@@ -2042,15 +2043,15 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                 } else {
                     print("❌ [授權] 無響應數據")
                     DispatchQueue.main.async {
-                        self.webView?.evaluateJavaScript("alert('✅ 激活請求已發送，正在驗證...')")
+                        self.webView?.evaluateJavaScript("alert('✅ 授權請求已發送，正在驗證...')")
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             self.checkAuthStatus()
                         }
                     }
                 }
             } else {
-                // 激活失敗
-                var errorMsg = "激活失敗 (HTTP \(httpResponse.statusCode))"
+                // 授權失敗
+                var errorMsg = "授權失敗 (HTTP \(httpResponse.statusCode))"
                 var errorCode: String? = nil
                 if let data = data {
                     if let jsonString = String(data: data, encoding: .utf8) {
@@ -2062,7 +2063,7 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         if let c = json["code"] as? String { errorCode = c }
                     }
                 }
-                print("❌ [授權] 激活失敗: HTTP \(httpResponse.statusCode), 錯誤: \(errorMsg)")
+                print("❌ [授權] 授權失敗: HTTP \(httpResponse.statusCode), 錯誤: \(errorMsg)")
                 DispatchQueue.main.async {
                     // Fail Closed：503 KV_UNAVAILABLE
                     if httpResponse.statusCode == 503 || errorCode == "KV_UNAVAILABLE" {
@@ -2168,12 +2169,12 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         
                         DispatchQueue.main.async {
                             if isPaid {
-                                // 已激活/已購買，顯示為已付費，無限制使用
-                                print("✅ [授權檢查] 設備已購買，更新 UI 為已激活狀態（無限制使用）")
+                                // 已授權/已購買，顯示為已付費，無限制使用
+                                print("✅ [授權檢查] 設備已購買，更新 UI 為已授權狀態（無限制使用）")
                                 let deviceIdHash = String(deviceId.prefix(8)) + "..." + String(deviceId.suffix(4))
                                 let serverTimeStr = json["serverTime"] as? String ?? ISO8601DateFormatter().string(from: Date())
                                 self.webView?.evaluateJavaScript("""
-                                    console.log('🔄 檢查授權後更新 UI 為已激活狀態（設備已購買）');
+                                    console.log('🔄 檢查授權後更新 UI 為已授權狀態（設備已購買）');
                                     // 先更新狀態（null 表示已購買）
                                     updateTrialStatus(null, true);
                                     // ⚠️ P0 必修 3：更新 Debug Snapshot
@@ -2200,10 +2201,10 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                                         authUI.style.height = '0';
                                         authUI.style.overflow = 'hidden';
                                     }
-                                    console.log('✅ UI 已更新為已激活狀態，所有試用狀態顯示已隱藏，可以無限制使用');
+                                    console.log('✅ UI 已更新為已授權狀態，所有試用狀態顯示已隱藏，可以無限制使用');
                                 """)
                             } else {
-                                // 未激活，顯示試用到期時間
+                                // 未授權，顯示試用到期時間
                                 print("⚠️ [授權檢查] 設備未購買，更新 UI 為試用狀態，到期時間: \(trialExpiresAt ?? "無")")
                                 let formatter = ISO8601DateFormatter()
                                 let currentTime = formatter.string(from: Date())

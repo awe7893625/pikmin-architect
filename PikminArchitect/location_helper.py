@@ -22,8 +22,8 @@ Protocol (stdin/stdout, line-based):
   <- "PONG"         (health check response)
   <- "STATUS:..."   (connection status)
 """
+
 import sys
-import os
 import subprocess
 import signal
 import time
@@ -35,11 +35,13 @@ sys.stdout.reconfigure(line_buffering=True)
 
 # ─── Connection Strategy Classes ─────────────────────────────────────────────
 
+
 class DVTLocationService:
     """
     Strategy 1 (Primary): Use DVT Instruments channel.
     Persistent multiplexed channel — fastest and most reliable for iOS 17+.
     """
+
     NAME = "DVT"
 
     def __init__(self, rsd):
@@ -49,8 +51,12 @@ class DVTLocationService:
         self._lock = threading.Lock()
 
     def connect(self):
-        from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import DvtSecureSocketProxyService
-        from pymobiledevice3.services.dvt.instruments.location_simulation import LocationSimulation
+        from pymobiledevice3.services.dvt.dvt_secure_socket_proxy import (
+            DvtSecureSocketProxyService,
+        )
+        from pymobiledevice3.services.dvt.instruments.location_simulation import (
+            LocationSimulation,
+        )
 
         self.disconnect()
         self.dvt = DvtSecureSocketProxyService(self.rsd)
@@ -87,6 +93,7 @@ class DirectLocationService:
     Opens com.apple.dt.simulatelocation service and speaks raw protocol.
     Simpler than DVT but may not be available on all devices.
     """
+
     NAME = "Direct"
 
     def __init__(self, rsd):
@@ -129,6 +136,7 @@ class DirectLocationService:
 
 # ─── Main Engine ─────────────────────────────────────────────────────────────
 
+
 class LocationEngine:
     """
     Manages device connection with multiple strategies, automatic failover,
@@ -145,9 +153,9 @@ class LocationEngine:
 
     def __init__(self, udid=None):
         self.udid = udid
-        self.rsd = None           # RemoteServiceDiscoveryService
-        self.service = None       # Active location service
-        self.strategy_name = ""   # Current strategy name
+        self.rsd = None  # RemoteServiceDiscoveryService
+        self.service = None  # Active location service
+        self.strategy_name = ""  # Current strategy name
         self.connected = False
 
         # Stats
@@ -155,14 +163,14 @@ class LocationEngine:
         self.total_errors = 0
         self.consecutive_errors = 0
         self.last_send_time = None
-        self.last_lat = 0.0       # Track last position for re-send after reconnect
+        self.last_lat = 0.0  # Track last position for re-send after reconnect
         self.last_lon = 0.0
 
         # Reconnection state
         self._reconnect_lock = threading.Lock()
         self._reconnecting = False
-        self._backoff = 0.5       # Start with 0.5s backoff
-        self._connect_time = None # When current connection was established
+        self._backoff = 0.5  # Start with 0.5s backoff
+        self._connect_time = None  # When current connection was established
 
         # Heartbeat
         self._heartbeat_thread = None
@@ -267,7 +275,7 @@ class LocationEngine:
                         self.last_send_time = time.time()
                         return True
                     except Exception as e2:
-                        _log(f"Retry {attempt+1} also failed: {e2}")
+                        _log(f"Retry {attempt + 1} also failed: {e2}")
                         time.sleep(0.3)
 
             return False
@@ -278,14 +286,19 @@ class LocationEngine:
         for attempt in range(max_attempts):
             try:
                 from pymobiledevice3.tunneld.api import get_tunneld_devices
+
                 devices = get_tunneld_devices()
                 break
             except Exception as e:
                 err_name = type(e).__name__
-                if "TunneldConnection" in err_name or "ConnectionError" in str(type(e).__mro__):
-                    _log(f"Tunneld not running (attempt {attempt+1}/{max_attempts})")
+                if "TunneldConnection" in err_name or "ConnectionError" in str(
+                    type(e).__mro__
+                ):
+                    _log(f"Tunneld not running (attempt {attempt + 1}/{max_attempts})")
                 else:
-                    _log(f"Device discovery error (attempt {attempt+1}): {err_name}: {e}")
+                    _log(
+                        f"Device discovery error (attempt {attempt + 1}): {err_name}: {e}"
+                    )
                 if attempt < max_attempts - 1:
                     time.sleep(1.0)
                 else:
@@ -299,7 +312,7 @@ class LocationEngine:
 
         if self.udid:
             for d in devices:
-                dev_udid = getattr(d, 'udid', '') or ''
+                dev_udid = getattr(d, "udid", "") or ""
                 if dev_udid == self.udid:
                     _log(f"Matched UDID: {dev_udid}")
                     return d
@@ -337,7 +350,9 @@ class LocationEngine:
             return
 
         uptime = time.time() - (self._connect_time or 0)
-        _log(f"Hot-swap refresh starting (uptime: {uptime:.0f}s, sent: {self.total_sent})")
+        _log(
+            f"Hot-swap refresh starting (uptime: {uptime:.0f}s, sent: {self.total_sent})"
+        )
 
         saved_lat = self.last_lat
         saved_lon = self.last_lon
@@ -381,7 +396,9 @@ class LocationEngine:
             except Exception:
                 pass
 
-        _log(f"Hot-swap refresh complete — zero downtime, position held at {saved_lat:.6f}, {saved_lon:.6f}")
+        _log(
+            f"Hot-swap refresh complete — zero downtime, position held at {saved_lat:.6f}, {saved_lon:.6f}"
+        )
 
     def _start_heartbeat(self):
         """Start background heartbeat thread."""
@@ -430,7 +447,9 @@ class LocationEngine:
 
             # Too many consecutive errors
             if self.consecutive_errors >= 5:
-                _log(f"Too many consecutive errors ({self.consecutive_errors}), reconnecting")
+                _log(
+                    f"Too many consecutive errors ({self.consecutive_errors}), reconnecting"
+                )
                 self._auto_reconnect()
 
 
@@ -441,14 +460,23 @@ def _log(msg):
 
 # ─── CLI Fallback ────────────────────────────────────────────────────────────
 
+
 def send_via_cli(lat, lon, udid):
     """Last-resort: send location via pymobiledevice3 CLI subprocess.
     WARNING: This spawns a new process for every call. If called rapidly,
     it can create hundreds of zombie processes. Use sparingly!"""
     try:
         python = sys.executable
-        cmd = [python, "-m", "pymobiledevice3",
-               "developer", "dvt", "simulate-location", "set", "--tunnel"]
+        cmd = [
+            python,
+            "-m",
+            "pymobiledevice3",
+            "developer",
+            "dvt",
+            "simulate-location",
+            "set",
+            "--tunnel",
+        ]
         if udid:
             cmd.append(udid)
         cmd.extend(["--", str(lat), str(lon)])
@@ -468,24 +496,28 @@ _cli_max_calls = 5  # Stop using CLI after this many consecutive calls
 
 # ─── Main Loop ───────────────────────────────────────────────────────────────
 
+
 def main():
     udid = sys.argv[1] if len(sys.argv) > 1 else None
 
     # Handle signals gracefully
     def on_signal(signum, frame):
         sys.exit(0)
+
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
 
-    # Initialize engine and connect (retry up to 5 times on startup)
+    # Initialize engine and connect (retry up to 3 times on startup)
     engine = LocationEngine(udid)
     use_api = False
-    for startup_attempt in range(5):
+    for startup_attempt in range(3):
         use_api = engine.connect()
         if use_api:
             break
-        _log(f"Startup connect attempt {startup_attempt+1}/5 failed, retrying in 2s...")
-        time.sleep(2.0)
+        _log(
+            f"Startup connect attempt {startup_attempt + 1}/3 failed, retrying in 1s..."
+        )
+        time.sleep(1.0)
 
     cli_consecutive = 0
 
