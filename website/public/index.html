@@ -23,16 +23,17 @@
     <meta name="twitter:title" content="KongGoo - iOS GPS 位置模擬工具">
     <meta name="twitter:description" content="免費試用一週，支援瞬移、散花路線、地標搜尋。macOS / Windows 雙平台。">
     <meta name="twitter:image" content="https://konggoo.uk/og-image.png">
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         /* ===== Reset & Base ===== */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --accent: #6366f1;
-            --accent-light: #818cf8;
-            --accent-dark: #4f46e5;
-            --accent-bg: rgba(99,102,241,.06);
+            --accent: #4A7C59;
+            --accent-light: #6B9B7A;
+            --accent-dark: #3A6349;
+            --accent-bg: rgba(74,124,89,.06);
             --green: #22c55e;
             --surface: #ffffff;
             --surface-2: #f8fafc;
@@ -93,13 +94,13 @@
         /* ===== Hero ===== */
         .hero {
             padding: calc(var(--nav-h) + 80px) 0 100px;
-            background: linear-gradient(165deg, #f0f0ff 0%, #e8ecff 40%, #f5f0ff 100%);
+            background: linear-gradient(165deg, #f5f2e8 0%, #e8f0e8 40%, #f0f5ee 100%);
             text-align: center; position: relative; overflow: hidden;
         }
         .hero::before {
             content: ''; position: absolute; inset: 0;
-            background: radial-gradient(ellipse 600px 400px at 50% 20%, rgba(99,102,241,.12), transparent),
-                        radial-gradient(ellipse 400px 300px at 80% 70%, rgba(168,85,247,.08), transparent);
+            background: radial-gradient(ellipse 600px 400px at 50% 20%, rgba(74,124,89,.12), transparent),
+                        radial-gradient(ellipse 400px 300px at 80% 70%, rgba(196,149,106,.08), transparent);
             pointer-events: none;
         }
         .hero-badge {
@@ -109,7 +110,7 @@
             font-size: .8rem; font-weight: 700; margin-bottom: 20px;
         }
         .hero h1 { font-size: clamp(2.25rem, 5.5vw, 3.5rem); font-weight: 900; line-height: 1.15; letter-spacing: -.03em; max-width: 720px; margin: 0 auto; }
-        .hero h1 span { background: linear-gradient(135deg, var(--accent), #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .hero h1 span { background: linear-gradient(135deg, var(--accent), #8B6B4A); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .hero-sub { font-size: 1.1rem; color: var(--text-2); max-width: 520px; margin: 16px auto 0; }
         .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 32px; }
         .btn-primary {
@@ -117,10 +118,10 @@
             padding: 14px 32px; border-radius: 999px;
             background: var(--accent); color: #fff;
             font-size: 1rem; font-weight: 700;
-            box-shadow: 0 4px 16px rgba(99,102,241,.35);
+            box-shadow: 0 4px 16px rgba(74,124,89,.35);
             transition: all .2s;
         }
-        .btn-primary:hover { background: var(--accent-dark); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(99,102,241,.4); }
+        .btn-primary:hover { background: var(--accent-dark); transform: translateY(-2px); box-shadow: 0 6px 24px rgba(74,124,89,.4); }
         .btn-secondary {
             display: inline-flex; align-items: center; gap: 8px;
             padding: 14px 28px; border-radius: 999px;
@@ -190,7 +191,7 @@
             border: 1px solid var(--border); transition: all .25s;
         }
         .feature-card:hover { border-color: var(--accent-light); box-shadow: var(--shadow); transform: translateY(-4px); }
-        .feature-card.highlight { border-color: var(--accent); background: linear-gradient(135deg, rgba(99,102,241,.04), rgba(168,85,247,.04)); }
+        .feature-card.highlight { border-color: var(--accent); background: linear-gradient(135deg, rgba(74,124,89,.04), rgba(196,149,106,.04)); }
         .feature-icon-wrap {
             width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
             background: var(--accent-bg); margin-bottom: 16px;
@@ -243,7 +244,7 @@
         }
         .step-icon {
             width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center;
-            background: linear-gradient(135deg, var(--accent), #a855f7); color: #fff;
+            background: linear-gradient(135deg, var(--accent), #8B6B4A); color: #fff;
             margin: 0 auto 16px; font-size: 1.25rem; font-weight: 800;
         }
         .tutorial-step h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
@@ -413,7 +414,7 @@
 <nav class="navbar" id="navbar">
     <div class="nav-inner">
         <a href="#" class="nav-logo">
-            <svg viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="12" stroke="var(--accent)" stroke-width="2.5"/><circle cx="14" cy="14" r="4" fill="var(--accent)"/><path d="M14 6v4M14 18v4M6 14h4M18 14h4" stroke="var(--accent)" stroke-width="2" stroke-linecap="round"/></svg>
+            <svg viewBox="0 0 28 28" fill="none"><ellipse cx="14" cy="14" rx="9.5" ry="7" fill="#C4956A"/><rect x="10.5" y="14" width="7" height="6.5" rx="1.5" fill="#F0E4C8"/><ellipse cx="14" cy="14" rx="9.5" ry="7" fill="none" stroke="#A67B50" stroke-width=".5" opacity=".4"/><circle cx="14" cy="8" r="2.8" fill="#fff" stroke="#e0d4be" stroke-width=".4"/><circle cx="11.8" cy="9" r="1.6" fill="#fff" stroke="#e0d4be" stroke-width=".3"/><circle cx="16.2" cy="9" r="1.6" fill="#fff" stroke="#e0d4be" stroke-width=".3"/><circle cx="14" cy="8" r=".9" fill="#F5C542"/><path d="M8 23c1.5-2.5 3-1.5 4.5.5M15.5 23c1.5-2.5 3-1.5 4.5.5" stroke="#4A7C59" stroke-width="1.2" stroke-linecap="round"/></svg>
             KongGoo
         </a>
         <div class="nav-links">
@@ -1010,7 +1011,7 @@ function initDemoMap() {
     demoMapMarker = L.marker([lat, lon], {
         icon: L.divIcon({
             className: 'demo-marker',
-            html: '<div style="width:18px;height:18px;background:var(--accent);border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px var(--accent);"></div>',
+            html: '<div style="width:18px;height:18px;background:var(--accent);border:3px solid #fff;border-radius:50%;box-shadow:0 0 10px var(--accent);"></div>',
             iconSize: [18, 18], iconAnchor: [9, 9]
         })
     }).addTo(demoMapInstance);

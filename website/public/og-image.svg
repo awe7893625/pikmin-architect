@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3A6349;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#4A7C59;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#5A8F6A;stop-opacity:1" />
+    </linearGradient>
+    <radialGradient id="radialHighlight" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.08" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+    </radialGradient>
+    <filter id="iconShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+    <filter id="textShadow" x="-5%" y="-10%" width="110%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#000000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+  <rect width="1200" height="630" fill="url(#radialHighlight)"/>
+
+  <!-- Decorative grid lines -->
+  <g opacity="0.06" stroke="white" stroke-width="1">
+    <line x1="0" y1="105" x2="1200" y2="105"/>
+    <line x1="0" y1="210" x2="1200" y2="210"/>
+    <line x1="0" y1="315" x2="1200" y2="315"/>
+    <line x1="0" y1="420" x2="1200" y2="420"/>
+    <line x1="0" y1="525" x2="1200" y2="525"/>
+    <line x1="200" y1="0" x2="200" y2="630"/>
+    <line x1="400" y1="0" x2="400" y2="630"/>
+    <line x1="600" y1="0" x2="600" y2="630"/>
+    <line x1="800" y1="0" x2="800" y2="630"/>
+    <line x1="1000" y1="0" x2="1000" y2="630"/>
+  </g>
+
+  <!-- Decorative circles -->
+  <circle cx="1050" cy="120" r="220" fill="none" stroke="white" stroke-width="1" opacity="0.07"/>
+  <circle cx="1050" cy="120" r="160" fill="none" stroke="white" stroke-width="1" opacity="0.07"/>
+  <circle cx="150" cy="520" r="180" fill="none" stroke="white" stroke-width="1" opacity="0.06"/>
+
+  <!-- Soft glow blobs -->
+  <ellipse cx="300" cy="200" rx="300" ry="200" fill="#6B9B7A" opacity="0.15"/>
+  <ellipse cx="900" cy="430" rx="280" ry="180" fill="#C4956A" opacity="0.1"/>
+
+  <!-- Mushroom icon (centered, above text) -->
+  <g transform="translate(600, 145)" filter="url(#iconShadow)">
+    <!-- Mushroom cap -->
+    <ellipse cx="0" cy="0" rx="58" ry="40" fill="#C4956A"/>
+    <ellipse cx="0" cy="0" rx="58" ry="40" fill="none" stroke="#A67B50" stroke-width="1" opacity=".3"/>
+    <!-- Cap spots -->
+    <circle cx="-22" cy="-12" r="8" fill="#D4A57A" opacity=".5"/>
+    <circle cx="18" cy="-8" r="6" fill="#D4A57A" opacity=".4"/>
+    <!-- Mushroom body -->
+    <rect x="-22" y="0" width="44" height="36" rx="8" fill="#F0E4C8"/>
+    <!-- Flower petals -->
+    <circle cx="0" cy="-36" r="16" fill="white" opacity=".95"/>
+    <circle cx="-12" cy="-28" r="10" fill="white" opacity=".85"/>
+    <circle cx="12" cy="-28" r="10" fill="white" opacity=".85"/>
+    <circle cx="-8" cy="-42" r="9" fill="white" opacity=".85"/>
+    <circle cx="8" cy="-42" r="9" fill="white" opacity=".85"/>
+    <!-- Flower center -->
+    <circle cx="0" cy="-35" r="6" fill="#F5C542"/>
+    <!-- Grass -->
+    <path d="M-40,38 C-32,22 -24,30 -18,38" stroke="#6B9B7A" stroke-width="3" stroke-linecap="round" fill="none"/>
+    <path d="M18,38 C24,22 32,30 40,38" stroke="#6B9B7A" stroke-width="3" stroke-linecap="round" fill="none"/>
+  </g>
+
+  <!-- "KongGoo" main title -->
+  <text
+    x="600"
+    y="320"
+    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+    font-size="110"
+    font-weight="700"
+    fill="white"
+    text-anchor="middle"
+    letter-spacing="-2"
+    filter="url(#textShadow)"
+    opacity="0.97"
+  >KongGoo</text>
+
+  <!-- Divider line -->
+  <line x1="480" y1="350" x2="720" y2="350" stroke="white" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- Subtitle -->
+  <text
+    x="600"
+    y="395"
+    font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+    font-size="28"
+    font-weight="400"
+    fill="white"
+    text-anchor="middle"
+    letter-spacing="2"
+    opacity="0.82"
+  >iOS GPS Location Simulator</text>
+
+  <!-- Badge pill -->
+  <g transform="translate(600, 462)">
+    <rect x="-125" y="-18" width="250" height="36" rx="18" fill="white" opacity="0.15"/>
+    <rect x="-125" y="-18" width="250" height="36" rx="18" fill="none" stroke="white" stroke-width="1" opacity="0.3"/>
+    <text
+      x="0"
+      y="6"
+      font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+      font-size="14"
+      font-weight="500"
+      fill="white"
+      text-anchor="middle"
+      letter-spacing="1"
+      opacity="0.85"
+    >macOS / Windows | Free Trial</text>
+  </g>
+
+  <!-- Bottom accent line -->
+  <rect x="0" y="618" width="1200" height="12" fill="white" opacity="0.08" rx="2"/>
+</svg>
