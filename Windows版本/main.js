@@ -162,11 +162,16 @@ ipcMain.handle('reconnect', async () => {
         mainWindow.webContents.executeJavaScript(
             `if(typeof setUI==='function') setUI('online', '已連線 — ${devName}${iosVer}${tunnelInfo}')`
         );
-        // 如果 amfi 需要手動教學，顯示教學
-        if (result.amfiResult === 'manual') {
-            mainWindow.webContents.executeJavaScript(
-                `if(typeof showDevModeTutorial==='function') showDevModeTutorial()`
-            );
+        // 首次連線一律顯示開發者模式教學（用戶需要手動到 iPhone 設定開啟）
+        if (result.showTutorial) {
+            // 延遲 1.5 秒再彈出教學，讓用戶先看到連線成功的訊息
+            setTimeout(() => {
+                if (mainWindow && mainWindow.webContents) {
+                    mainWindow.webContents.executeJavaScript(
+                        `if(typeof showDevModeTutorial==='function') showDevModeTutorial()`
+                    );
+                }
+            }, 1500);
         }
     } else if (result.needsItunes && mainWindow && mainWindow.webContents) {
         mainWindow.webContents.executeJavaScript(

@@ -219,31 +219,50 @@ class LocationEngine {
     }
 
     // ===== 步驟 1.5: 啟用開發者模式 =====
-    async enableDeveloperMode() {
+    // useTunnel: true 時用 --tunnel 參數（隧道建立後更可靠）
+    async enableDeveloperMode(useTunnel = false) {
         if (!this.udid) {
             return { success: false, error: '尚未連接設備' };
         }
 
+        // 方法 1: 透過 lockdown（USB 直連）
         try {
-            console.log('[amfi] 嘗試啟用開發者模式...');
-            const cmd = this._getCmd(`amfi enable-developer-mode --udid ${this.udid}`);
+            console.log(`[amfi] 嘗試啟用開發者模式 (tunnel=${useTunnel})...`);
+            const tunnelFlag = useTunnel ? ' --tunnel' : '';
+            const cmd = this._getCmd(`amfi enable-developer-mode --udid ${this.udid}${tunnelFlag}`);
+            console.log('[amfi] 執行指令:', cmd);
             const { stdout, stderr } = await execAsync(cmd, { timeout: 30000 });
             const output = (stdout + ' ' + stderr).toLowerCase();
-            console.log('[amfi] 結果:', stdout.substring(0, 300));
+            const fullOutput = stdout + '\n' + stderr;
+            console.log('[amfi] stdout:', stdout.substring(0, 500));
+            console.log('[amfi] stderr:', stderr.substring(0, 500));
 
-            if (output.includes('success') || output.includes('already') || stdout.trim() === '') {
+            if (output.includes('success') || output.includes('already')) {
                 return { success: true, message: '開發者模式已啟用' };
-            } else if (output.includes('error') || output.includes('failed')) {
+            } else if (output.includes('error') || output.includes('failed') || output.includes('exception')) {
+                // 如果不是用 tunnel 模式，嘗試 tunnel 模式
+                if (!useTunnel && this.tunnelRunning) {
+                    console.log('[amfi] lockdown 模式失敗，嘗試 tunnel 模式...');
+                    return await this.enableDeveloperMode(true);
+                }
                 return {
                     success: false,
                     needsTutorial: true,
-                    error: '無法自動啟用開發者模式，請依教學手動啟用'
+                    error: `無法自動啟用：${fullOutput.substring(0, 200)}`
                 };
             }
-            // 其他情況當作成功（有些版本不回傳文字）
-            return { success: true, message: '開發者模式指令已執行' };
+            // 空輸出也當作成功嘗試過了
+            return { success: true, message: '開發者模式指令已執行（無輸出）' };
         } catch (error) {
-            console.log('[amfi] 錯誤:', error.message);
+            const errMsg = (error.stderr || error.message || '').toLowerCase();
+            console.log('[amfi] 執行錯誤:', error.stderr || error.message);
+
+            // 如果 lockdown 失敗且有 tunnel，用 tunnel 重試
+            if (!useTunnel && this.tunnelRunning) {
+                console.log('[amfi] lockdown 失敗，嘗試 tunnel 模式...');
+                return await this.enableDeveloperMode(true);
+            }
+
             return {
                 success: false,
                 needsTutorial: true,
@@ -417,7 +436,7 @@ class LocationEngine {
         return { success: false, error: errorMsg };
     }
 
-    // ===== 完整連線流程：detect → amfi → tunnel → ready =====
+    // ===== 完整連線流程：detect → tunnel → amfi → ready =====
     async fullConnect(onProgress) {
         // Step 1: 偵測設備
         if (onProgress) onProgress('正在偵測設備...');
@@ -431,13 +450,7 @@ class LocationEngine {
         const iosVer = parseFloat(this.iosVersion) || 0;
         const needsTunnel = iosVer >= 17 || iosVer === 0; // 版本不明時也嘗試
 
-        // Step 1.5: 啟用開發者模式
-        if (onProgress) onProgress('正在啟用開發者模式...');
-        const amfiResult = await this.enableDeveloperMode();
-        console.log('[fullConnect] amfi 結果:', amfiResult);
-        // 不管成功失敗都繼續（可能已經啟用了）
-
-        // Step 2: 啟動隧道（iOS 17+ 必要）
+        // Step 2: 先啟動隧道（iOS 17+ 必要，amfi 也可能需要隧道）
         if (needsTunnel) {
             if (await this.isTunnelRunning()) {
                 console.log('[fullConnect] 隧道已在運行，跳過啟動');
@@ -449,14 +462,20 @@ class LocationEngine {
                     return {
                         success: false,
                         deviceDetected: true,
-                        needsTutorial: amfiResult.needsTutorial || false,
+                        needsTutorial: true,
                         error: tunnelResult.error
                     };
                 }
             }
         }
 
-        // Step 3: 確認一切就緒
+        // Step 3: 隧道建立後才執行 amfi（更可靠）
+        if (onProgress) onProgress('正在啟用開發者模式...');
+        const amfiResult = await this.enableDeveloperMode(false);
+        console.log('[fullConnect] amfi 結果:', JSON.stringify(amfiResult));
+        // 不管成功失敗都繼續
+
+        // Step 4: 確認一切就緒
         if (onProgress) onProgress('連線就緒');
         return {
             success: true,
@@ -464,7 +483,9 @@ class LocationEngine {
             deviceName: this.deviceName,
             iosVersion: this.iosVersion,
             tunnelActive: needsTunnel,
-            amfiResult: amfiResult.success ? 'ok' : 'manual'
+            amfiResult: amfiResult.success ? 'ok' : 'manual',
+            // 首次連線一律提示用戶檢查開發者模式
+            showTutorial: true
         };
     }
 
