@@ -20,6 +20,7 @@ class LocationEngine {
         this.isRunning = false;
         this.timer = null;
         this._depInstaller = null;
+        this.itunesInstalled = null; // cache
     }
 
     // 注入 DependencyInstaller 實例（由 main.js 設定）
@@ -36,9 +37,65 @@ class LocationEngine {
         return `python -m pymobiledevice3 ${args}`;
     }
 
+    // 檢查 iTunes / Apple Mobile Device Support 是否已安裝
+    async checkiTunes() {
+        if (this.itunesInstalled !== null) return this.itunesInstalled;
+
+        // 檢查 Apple Mobile Device Service 是否存在
+        const checks = [
+            // 方法 1: 檢查 Windows 服務
+            async () => {
+                try {
+                    const { stdout } = await execAsync('sc query "Apple Mobile Device Service"', { timeout: 5000 });
+                    return stdout.includes('RUNNING') || stdout.includes('STATE');
+                } catch { return false; }
+            },
+            // 方法 2: 檢查常見安裝路徑
+            async () => {
+                const paths = [
+                    'C:\\Program Files\\Common Files\\Apple\\Mobile Device Support',
+                    'C:\\Program Files (x86)\\Common Files\\Apple\\Mobile Device Support',
+                    'C:\\Program Files\\Common Files\\Apple\\Apple Application Support'
+                ];
+                return paths.some(p => fs.existsSync(p));
+            },
+            // 方法 3: 檢查 usbmuxd 是否可用
+            async () => {
+                try {
+                    await execAsync('tasklist /FI "IMAGENAME eq AppleMobileDeviceService.exe"', { timeout: 5000 });
+                    return true;
+                } catch { return false; }
+            }
+        ];
+
+        for (const check of checks) {
+            if (await check()) {
+                this.itunesInstalled = true;
+                return true;
+            }
+        }
+        this.itunesInstalled = false;
+        return false;
+    }
+
     // 檢測 iOS 設備
     async detectDevice() {
         try {
+            // 先檢查 iTunes 是否安裝
+            const hasItunes = await this.checkiTunes();
+            if (!hasItunes) {
+                return {
+                    success: false,
+                    needsItunes: true,
+                    error: '需要安裝 iTunes\n\n' +
+                        'Windows 需要 iTunes 的 USB 驅動程式才能連接 iPhone。\n\n' +
+                        '請安裝以下其中一個：\n' +
+                        '• iTunes（Microsoft Store 或 apple.com/itunes）\n' +
+                        '• Apple Devices（Microsoft Store 搜尋）\n\n' +
+                        '安裝完成後重新啟動 KongGoo。'
+                };
+            }
+
             // 方法 1: 使用 pymobiledevice3 usbmux list（最可靠）
             try {
                 const cmd = this._getCmd('usbmux list');
@@ -75,7 +132,7 @@ class LocationEngine {
 
             return {
                 success: false,
-                error: '未偵測到 iOS 設備。\n\n請確認：\n1. iPhone/iPad 已用 USB 線連接\n2. 已安裝 iTunes 或 Apple Devices\n3. 設備已解鎖並信任此電腦'
+                error: '未偵測到 iOS 設備。\n\n請確認：\n1. iPhone/iPad 已用 USB 線連接\n2. 設備已解鎖並信任此電腦'
             };
         } catch (error) {
             return { success: false, error: error.message };

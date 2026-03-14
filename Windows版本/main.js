@@ -153,6 +153,14 @@ ipcMain.handle('reconnect', async () => {
         mainWindow.webContents.executeJavaScript(
             `if(typeof setUI==='function') setUI('online', ' 已連線 — ${devName}${iosVer}')`
         );
+    } else if (result.needsItunes && mainWindow && mainWindow.webContents) {
+        // 顯示需要 iTunes 的提示，並提供下載連結
+        mainWindow.webContents.executeJavaScript(
+            `if(typeof setUI==='function') setUI('error', '需要安裝 iTunes — 請到 Microsoft Store 搜尋 iTunes 或 Apple Devices 安裝後重啟 App')`
+        );
+        // 開啟 iTunes 下載頁面
+        const { shell } = require('electron');
+        shell.openExternal('https://support.apple.com/zh-tw/106372');
     }
     return result;
 });
