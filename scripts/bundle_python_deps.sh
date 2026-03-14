@@ -191,5 +191,17 @@ if [[ -f "$BIN_DIR_ARM/idevice_id" ]]; then
   fix_macho_deps "$BIN_DIR_ARM/idevice_id" "bin" "$LIB_DIR_ARM"
 fi
 
+echo "🔗 建立 lib/bin symlink（idevice_id 用 @executable_path/../lib/ 解析）..."
+# idevice_id 在 bin_arm64/，@executable_path/../lib/ 解析為 Resources/lib/
+# 但 library 實際在 lib_arm64/，所以建 symlink 讓路徑能解析
+if [[ -d "$LIB_DIR_ARM" && ! -e "$RES_DIR/lib" ]]; then
+  ln -s lib_arm64 "$RES_DIR/lib"
+  echo "  ✅ lib → lib_arm64"
+fi
+if [[ -d "$BIN_DIR_ARM" && ! -e "$RES_DIR/bin" ]]; then
+  ln -s bin_arm64 "$RES_DIR/bin"
+  echo "  ✅ bin → bin_arm64"
+fi
+
 echo "✅ 已打包 Python + pymobiledevice3 + libimobiledevice 依賴"
 rm -rf "$TMP_DIR"
