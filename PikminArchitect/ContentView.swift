@@ -1336,11 +1336,27 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
 
             // ===== 步驟 1.5: 嘗試啟用開發者模式（讓選項出現在 iPhone 設定中）=====
             DispatchQueue.main.async {
-                self.webView?.evaluateJavaScript("setUI('connecting', '正在準備開發者模式...')")
+                self.webView?.evaluateJavaScript("setUI('connecting', '正在啟用開發者模式...')")
             }
             let amfiCmd = self.pythonCommand("-m pymobiledevice3 amfi enable-developer-mode --udid \(id)")
+            print("[reconnect] 執行 amfi 命令: \(amfiCmd)")
             let amfiResult = self.shell(amfiCmd)
-            print("[reconnect] amfi enable-developer-mode: \(amfiResult.prefix(200))")
+            print("[reconnect] amfi enable-developer-mode 結果: \(amfiResult.prefix(500))")
+
+            // 根據結果給用戶提示
+            let amfiLower = amfiResult.lowercased()
+            if amfiResult.isEmpty || amfiLower.contains("success") || amfiLower.contains("already") {
+                print("[reconnect] amfi 成功或已啟用")
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('connecting', '開發者模式已準備，請到 iPhone 設定開啟')")
+                }
+            } else if amfiLower.contains("error") || amfiLower.contains("failed") || amfiLower.contains("no device") || amfiLower.contains("no such") {
+                print("[reconnect] amfi 失敗: \(amfiResult.prefix(300))")
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('connecting', '開發者模式自動設定失敗，請依教學手動啟用')")
+                    self.webView?.evaluateJavaScript("showDevModeTutorial()")
+                }
+            }
             // 不管成功失敗都繼續（可能已經啟用、或需要隧道才能用）
 
             // ===== 步驟 2: 檢查隧道 — 非破壞性！不殺已運行的隧道 =====

@@ -86,6 +86,33 @@
         .btn-tutorial-close { background: rgba(0,0,0,0.06); color: #333; }
         .btn-tutorial-enable { background: var(--apple-blue); color: #fff; }
 
+        /* 幫助按鈕（左下角） */
+        #help-btn {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.92);
+            color: var(--apple-blue);
+            border: 1px solid rgba(0,0,0,0.1);
+            font-size: 20px;
+            font-weight: 800;
+            cursor: pointer;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+        #help-btn:hover {
+            background: var(--apple-blue);
+            color: #fff;
+            transform: scale(1.1);
+        }
+
         #apple-modal { position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:3000; display:none; align-items:center; justify-content:center; backdrop-filter:blur(5px); }
         .modal-content { background:#fff; width:270px; border-radius:20px; text-align:center; overflow:hidden; }
         .modal-footer { display:flex; border-top:1px solid #eee; }
@@ -133,6 +160,9 @@
         </div>
         <div class="nav-section"><div class="grid" id="loc-list"></div></div>
     </div>
+
+    <!-- 幫助按鈕 -->
+    <button id="help-btn" onclick="showDevModeTutorial()" title="開發者模式教學">?</button>
 
     <!-- 開發者模式教學 overlay -->
     <div id="devmode-tutorial">
@@ -869,21 +899,33 @@
 
         // 開發者模式教學
         function showDevModeTutorial() {
+            console.log('📖 [教學] showDevModeTutorial 被呼叫');
             const el = document.getElementById('devmode-tutorial');
-            if (el) el.classList.add('open');
+            if (el) {
+                el.classList.add('open');
+                console.log('📖 [教學] 教學 overlay 已顯示');
+            } else {
+                console.error('❌ [教學] 找不到 devmode-tutorial 元素');
+            }
         }
         function closeTutorial() {
             const el = document.getElementById('devmode-tutorial');
             if (el) el.classList.remove('open');
             localStorage.setItem('tutorialShown', '1');
+            console.log('📖 [教學] 教學已關閉');
         }
 
         // 頁面載入時檢查授權狀態
         document.addEventListener('DOMContentLoaded', function() {
             checkAuthStatus();
-            // 首次啟動顯示開發者模式教學
+            // 首次啟動顯示開發者模式教學（更可靠的觸發方式）
+            console.log('📖 [教學] tutorialShown =', localStorage.getItem('tutorialShown'));
             if (!localStorage.getItem('tutorialShown')) {
-                setTimeout(showDevModeTutorial, 800);
+                console.log('📖 [教學] 首次啟動，準備顯示教學...');
+                setTimeout(function() {
+                    console.log('📖 [教學] 延遲觸發 showDevModeTutorial');
+                    showDevModeTutorial();
+                }, 1200);
             }
         });
         
