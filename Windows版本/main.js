@@ -10,22 +10,8 @@ let locationEngine = new LocationEngine();
 let authManager = new AuthManager();
 let dependencyInstaller = new DependencyInstaller();
 
-// App 啟動時初始化授權 + 檢查依賴
-app.whenReady().then(async () => {
-    // 初始化授權管理器
-    authManager.registerDevice().then(() => {
-        console.log('設備註冊成功');
-    }).catch(err => {
-        console.error('設備註冊失敗:', err);
-    });
-
-    // 檢查並安裝依賴（在背景執行，不阻塞 UI）
-    dependencyInstaller.checkAndInstall().then(result => {
-        if (!result.success) {
-            console.warn('依賴檢查結果:', result);
-        }
-    });
-});
+// 連接 DependencyInstaller → LocationEngine
+locationEngine.setDependencyInstaller(dependencyInstaller);
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -42,15 +28,44 @@ function createWindow() {
     });
 
     mainWindow.loadFile('renderer/index.html');
-    
-    // 開發時打開 DevTools
+
     if (process.env.NODE_ENV === 'development') {
         mainWindow.webContents.openDevTools();
     }
 }
 
-app.whenReady().then(() => {
+// App 啟動
+app.whenReady().then(async () => {
     createWindow();
+
+    // 註冊設備（授權系統）
+    authManager.registerDevice().then(() => {
+        console.log('設備註冊成功');
+    }).catch(err => {
+        console.error('設備註冊失敗:', err);
+    });
+
+    // 背景靜默安裝依賴（不阻塞 UI，不彈對話框）
+    dependencyInstaller.checkAndInstall((status) => {
+        console.log('[依賴安裝]', status);
+        // 把進度傳到前端顯示
+        if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.executeJavaScript(
+                `if(typeof setUI==='function') setUI('connecting', '${status.replace(/'/g, "\\'")}')`
+            );
+        }
+    }).then(result => {
+        if (result.success) {
+            console.log('[依賴安裝] 完成，方式:', result.method);
+            if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.executeJavaScript(
+                    `if(typeof setUI==='function') setUI('online', ' 環境就緒')`
+                );
+            }
+        } else {
+            console.error('[依賴安裝] 失敗:', result.message || result.error);
+        }
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -81,26 +96,14 @@ ipcMain.handle('activateLicense', async (event, key) => {
 // GPS 模擬功能
 ipcMain.handle('teleport', async (event, lat, lon) => {
     try {
-        const result = await locationEngine.teleport(lat, lon);
-        
-        // 如果失敗且需要 Python，自動檢查並安裝
-        if (!result.success && result.needsPython) {
+        // 確保依賴已就緒
+        if (!dependencyInstaller.isReady) {
             const installResult = await dependencyInstaller.checkAndInstall();
-            if (installResult.success) {
-                // 重試
-                return await locationEngine.teleport(lat, lon);
-            } else {
-                // 顯示安裝提示
-                dialog.showMessageBox(mainWindow, {
-                    type: 'info',
-                    title: '需要安裝依賴',
-                    message: installResult.message || '請安裝必要的軟體',
-                    buttons: ['確定']
-                });
+            if (!installResult.success) {
+                return { success: false, error: installResult.message || '環境尚未準備好，請稍候重試' };
             }
         }
-        
-        return result;
+        return await locationEngine.teleport(lat, lon);
     } catch (error) {
         return { success: false, error: error.message };
     }
@@ -108,8 +111,13 @@ ipcMain.handle('teleport', async (event, lat, lon) => {
 
 ipcMain.handle('startRoute', async (event, points) => {
     try {
-        const result = await locationEngine.startRoute(points);
-        return result;
+        if (!dependencyInstaller.isReady) {
+            const installResult = await dependencyInstaller.checkAndInstall();
+            if (!installResult.success) {
+                return { success: false, error: installResult.message || '環境尚未準備好' };
+            }
+        }
+        return await locationEngine.startRoute(points);
     } catch (error) {
         return { success: false, error: error.message };
     }
@@ -121,27 +129,39 @@ ipcMain.handle('stop', async () => {
 });
 
 ipcMain.handle('reconnect', async () => {
-    // 先檢查依賴
-    const depsResult = await dependencyInstaller.checkAndInstall();
-    if (!depsResult.success) {
-        return { 
-            success: false, 
-            error: depsResult.message || '請先安裝必要的依賴軟體',
-            needsInstall: true
-        };
+    // 確保依賴已就緒
+    if (!dependencyInstaller.isReady) {
+        const depsResult = await dependencyInstaller.checkAndInstall((status) => {
+            if (mainWindow && mainWindow.webContents) {
+                mainWindow.webContents.executeJavaScript(
+                    `if(typeof setUI==='function') setUI('connecting', '${status.replace(/'/g, "\\'")}')`
+                );
+            }
+        });
+        if (!depsResult.success) {
+            return {
+                success: false,
+                error: depsResult.message || '環境安裝失敗，請確認網路連線'
+            };
+        }
     }
-    
+
     const result = await locationEngine.detectDevice();
+    if (result.success && mainWindow && mainWindow.webContents) {
+        const devName = result.deviceName || 'iPhone';
+        const iosVer = result.iosVersion ? ` (iOS ${result.iosVersion})` : '';
+        mainWindow.webContents.executeJavaScript(
+            `if(typeof setUI==='function') setUI('online', ' 已連線 — ${devName}${iosVer}')`
+        );
+    }
     return result;
 });
 
 ipcMain.handle('loadRealTrack', async (event, file) => {
-    // TODO: 實現真實軌跡載入
     return { success: true };
 });
 
 ipcMain.handle('startRealTrack', async () => {
-    // TODO: 實現真實軌跡播放
     return { success: true };
 });
 
