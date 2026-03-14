@@ -146,21 +146,46 @@ ipcMain.handle('reconnect', async () => {
         }
     }
 
-    const result = await locationEngine.detectDevice();
+    // 使用完整連線流程：detect → amfi → tunnel → ready
+    const result = await locationEngine.fullConnect((status) => {
+        if (mainWindow && mainWindow.webContents) {
+            mainWindow.webContents.executeJavaScript(
+                `if(typeof setUI==='function') setUI('connecting', '${status.replace(/'/g, "\\'")}')`
+            );
+        }
+    });
+
     if (result.success && mainWindow && mainWindow.webContents) {
         const devName = result.deviceName || 'iPhone';
         const iosVer = result.iosVersion ? ` (iOS ${result.iosVersion})` : '';
+        const tunnelInfo = result.tunnelActive ? ' [隧道已建立]' : '';
         mainWindow.webContents.executeJavaScript(
-            `if(typeof setUI==='function') setUI('online', ' 已連線 — ${devName}${iosVer}')`
+            `if(typeof setUI==='function') setUI('online', '已連線 — ${devName}${iosVer}${tunnelInfo}')`
         );
+        // 如果 amfi 需要手動教學，顯示教學
+        if (result.amfiResult === 'manual') {
+            mainWindow.webContents.executeJavaScript(
+                `if(typeof showDevModeTutorial==='function') showDevModeTutorial()`
+            );
+        }
     } else if (result.needsItunes && mainWindow && mainWindow.webContents) {
-        // 顯示需要 iTunes 的提示，並提供下載連結
         mainWindow.webContents.executeJavaScript(
             `if(typeof setUI==='function') setUI('error', '需要安裝 iTunes — 請到 Microsoft Store 搜尋 iTunes 或 Apple Devices 安裝後重啟 App')`
         );
-        // 開啟 iTunes 下載頁面
         const { shell } = require('electron');
         shell.openExternal('https://support.apple.com/zh-tw/106372');
+    } else if (!result.success && mainWindow && mainWindow.webContents) {
+        // 顯示具體錯誤
+        const errMsg = (result.error || '連線失敗').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+        mainWindow.webContents.executeJavaScript(
+            `if(typeof setUI==='function') setUI('error', '${errMsg}')`
+        );
+        // 如果設備偵測到了但隧道/amfi 失敗，顯示教學
+        if (result.deviceDetected && result.needsTutorial) {
+            mainWindow.webContents.executeJavaScript(
+                `if(typeof showDevModeTutorial==='function') showDevModeTutorial()`
+            );
+        }
     }
     return result;
 });
