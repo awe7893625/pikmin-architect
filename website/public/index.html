@@ -183,6 +183,49 @@
         .showcase-play:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
         .showcase-play svg { width: 18px; height: 18px; }
 
+        /* Demo marker animations */
+        .demo-marker-pulse {
+            width: 22px; height: 22px; position: relative;
+        }
+        .demo-marker-pulse::before {
+            content: ''; position: absolute; inset: -8px;
+            border-radius: 50%; background: var(--accent);
+            opacity: 0; animation: markerPulse 2s ease-out infinite;
+        }
+        .demo-marker-pulse .marker-dot {
+            width: 22px; height: 22px; background: var(--accent);
+            border: 3px solid #fff; border-radius: 50%;
+            box-shadow: 0 2px 12px rgba(74,124,89,.5);
+            position: relative; z-index: 1;
+        }
+        @keyframes markerPulse {
+            0% { transform: scale(0.5); opacity: 0.6; }
+            100% { transform: scale(2.5); opacity: 0; }
+        }
+        .demo-route-marker .marker-dot {
+            width: 12px; height: 12px; background: #F5C542;
+            border: 2px solid #fff; border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(245,197,66,.5);
+        }
+        .demo-search-result {
+            animation: searchBounce .5s cubic-bezier(.36,1.56,.64,1) forwards;
+        }
+        @keyframes searchBounce {
+            0% { transform: scale(0) translateY(-20px); opacity: 0; }
+            60% { transform: scale(1.2) translateY(0); opacity: 1; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+        .demo-flying-trail {
+            position: absolute; width: 8px; height: 8px;
+            border-radius: 50%; background: var(--accent);
+            pointer-events: none; z-index: 1000;
+            animation: trailFade .8s ease-out forwards;
+        }
+        @keyframes trailFade {
+            0% { opacity: .6; transform: scale(1); }
+            100% { opacity: 0; transform: scale(0); }
+        }
+
         /* ===== Features ===== */
         .features { padding: 100px 0; }
         .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-top: 48px; }
@@ -998,11 +1041,13 @@ function checkLicense() {
 let demoMapInstance = null;
 let demoMapMarker = null;
 let demoMapSearchMarker = null;
+let demoRouteLine = null;
+let demoRouteWaypoints = [];
 
 function initDemoMap() {
-    const lat = 22.9999, lon = 120.2269;
+    const lat = 25.033963, lon = 121.564472;
     demoMapInstance = L.map('demoMap', {
-        center: [lat, lon], zoom: 13,
+        center: [lat, lon], zoom: 14,
         zoomControl: false, attributionControl: false
     });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
@@ -1010,11 +1055,107 @@ function initDemoMap() {
     }).addTo(demoMapInstance);
     demoMapMarker = L.marker([lat, lon], {
         icon: L.divIcon({
-            className: 'demo-marker',
-            html: '<div style="width:18px;height:18px;background:var(--accent);border:3px solid #fff;border-radius:50%;box-shadow:0 0 10px var(--accent);"></div>',
-            iconSize: [18, 18], iconAnchor: [9, 9]
+            className: 'demo-marker-pulse',
+            html: '<div class="marker-dot"></div>',
+            iconSize: [22, 22], iconAnchor: [11, 11]
         })
     }).addTo(demoMapInstance);
+}
+
+/* Smooth fly animation with easing + coordinate update */
+function demoFlyTo(target, duration, onStep) {
+    const cur = demoMapMarker.getLatLng();
+    const startLat = cur.lat, startLng = cur.lng;
+    const dLat = target[0] - startLat, dLng = target[1] - startLng;
+    let start = null;
+    const coordEl = document.querySelector('.panel-coord');
+    function step(ts) {
+        if (!start) start = ts;
+        const p = Math.min((ts - start) / duration, 1);
+        /* ease-in-out cubic */
+        const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+        const lat = startLat + dLat * e;
+        const lng = startLng + dLng * e;
+        demoMapMarker.setLatLng([lat, lng]);
+        if (coordEl) coordEl.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6);
+        if (onStep) onStep(lat, lng, p);
+        if (p < 1) requestAnimationFrame(step);
+        else demoMapMarker.setLatLng(target);
+    }
+    requestAnimationFrame(step);
+}
+
+/* Animate route: marker walks along waypoints with polyline trail */
+function demoAnimateRoute(waypoints, totalDuration, onDone) {
+    if (demoRouteLine) { demoMapInstance.removeLayer(demoRouteLine); demoRouteLine = null; }
+    demoRouteWaypoints.forEach(m => demoMapInstance.removeLayer(m));
+    demoRouteWaypoints = [];
+
+    /* Draw faded route line */
+    const routeCoords = waypoints.map(w => [w[0], w[1]]);
+    demoRouteLine = L.polyline(routeCoords, {
+        color: '#4A7C59', weight: 3, opacity: 0.3, dashArray: '8 6'
+    }).addTo(demoMapInstance);
+
+    /* Add waypoint dots */
+    waypoints.forEach((w, i) => {
+        if (i === 0 || i === waypoints.length - 1) return;
+        const m = L.circleMarker([w[0], w[1]], {
+            radius: 5, color: '#fff', weight: 2,
+            fillColor: '#F5C542', fillOpacity: 0.9
+        }).addTo(demoMapInstance);
+        demoRouteWaypoints.push(m);
+    });
+
+    /* Calculate segment lengths */
+    const segments = [];
+    let totalLen = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+        const d = Math.sqrt(Math.pow(waypoints[i][0] - waypoints[i-1][0], 2) + Math.pow(waypoints[i][1] - waypoints[i-1][1], 2));
+        segments.push(d);
+        totalLen += d;
+    }
+
+    /* Active trail line (solid, animated) */
+    const trailLine = L.polyline([], {
+        color: '#4A7C59', weight: 4, opacity: 0.85
+    }).addTo(demoMapInstance);
+    const trailCoords = [routeCoords[0]];
+
+    const coordEl = document.querySelector('.panel-coord');
+    let start = null;
+    function step(ts) {
+        if (!start) start = ts;
+        const p = Math.min((ts - start) / totalDuration, 1);
+        /* Find which segment */
+        let accum = 0, segIdx = 0, segP = 0;
+        for (let i = 0; i < segments.length; i++) {
+            const segFrac = segments[i] / totalLen;
+            if (accum + segFrac >= p) {
+                segIdx = i;
+                segP = (p - accum) / segFrac;
+                break;
+            }
+            accum += segFrac;
+            if (i === segments.length - 1) { segIdx = i; segP = 1; }
+        }
+        const lat = waypoints[segIdx][0] + (waypoints[segIdx+1][0] - waypoints[segIdx][0]) * segP;
+        const lng = waypoints[segIdx][1] + (waypoints[segIdx+1][1] - waypoints[segIdx][1]) * segP;
+        demoMapMarker.setLatLng([lat, lng]);
+        trailCoords.push([lat, lng]);
+        trailLine.setLatLngs(trailCoords);
+        if (coordEl) coordEl.textContent = lat.toFixed(6) + ', ' + lng.toFixed(6);
+
+        if (p < 1) requestAnimationFrame(step);
+        else {
+            demoMapMarker.setLatLng(waypoints[waypoints.length - 1]);
+            setTimeout(() => {
+                demoMapInstance.removeLayer(trailLine);
+                if (onDone) onDone();
+            }, 500);
+        }
+    }
+    requestAnimationFrame(step);
 }
 
 let demoAnimationRunning = false;
@@ -1031,121 +1172,196 @@ function startDemoAnimation() {
     const addBtn = document.getElementById('demo-add-btn');
     const favTab = document.getElementById('demo-tab-fav');
     const tpTab = document.getElementById('demo-tab-tp');
+    const routeTab = document.getElementById('demo-tab-route');
     const goBtn = document.querySelector('.btn-go');
+    const stopBtn = document.querySelector('.btn-stop');
+    const coordEl = document.querySelector('.panel-coord');
 
     if (!demoMapInstance) initDemoMap();
 
-    const tainanLat = 22.9999, tainanLon = 120.2269;
-    const taipei101Lat = 25.033963, taipei101Lon = 121.564472;
-    const tokyoLat = 35.6762, tokyoLon = 139.6503;
+    const taipei101 = [25.033963, 121.564472];
+    const tokyoTower = [35.6585, 139.7454];
+    /* Route waypoints: Taipei 101 周邊散步路線 */
+    const routeWaypoints = [
+        [25.033963, 121.564472],  /* 台北101 */
+        [25.035200, 121.562800],  /* 往北 */
+        [25.037100, 121.561500],  /* 信義計畫區 */
+        [25.038500, 121.563200],  /* 轉東 */
+        [25.037800, 121.566000],  /* 松仁路 */
+        [25.035500, 121.567200],  /* 南下 */
+        [25.033963, 121.564472],  /* 回到台北101 */
+    ];
 
+    /* Clean up any previous state */
     if (demoMapSearchMarker) { demoMapInstance.removeLayer(demoMapSearchMarker); demoMapSearchMarker = null; }
-    demoMapInstance.setView([tainanLat, tainanLon], 13, { animate: false });
-    demoMapMarker.setLatLng([tainanLat, tainanLon]);
+    if (demoRouteLine) { demoMapInstance.removeLayer(demoRouteLine); demoRouteLine = null; }
+    demoRouteWaypoints.forEach(m => demoMapInstance.removeLayer(m));
+    demoRouteWaypoints = [];
+    demoMapInstance.setView(taipei101, 14, { animate: false });
+    demoMapMarker.setLatLng(taipei101);
+    if (coordEl) coordEl.textContent = '25.033963, 121.564472';
 
+    /* Reset panel */
     searchInput.style.display = 'block';
     searchInput.value = '';
+    searchInput.style.background = 'var(--surface-2)';
+    searchInput.style.border = '1px solid var(--border)';
     document.querySelectorAll('.demo-tab-btn').forEach(b => b.classList.remove('active'));
     tpTab.classList.add('active');
     demoFavorites.style.display = 'none';
     addBtn.style.display = 'none';
 
+    /* ======= PHASE 1: Search + Teleport (0-6s) ======= */
+    /* Type search text letter by letter */
     setTimeout(() => {
-        searchInput.value = '台北101';
+        const searchText = '台北101';
+        let i = 0;
         searchInput.style.background = 'var(--accent-bg)';
         searchInput.style.border = '2px solid var(--accent)';
+        const typeInterval = setInterval(() => {
+            searchInput.value = searchText.substring(0, ++i);
+            if (i >= searchText.length) clearInterval(typeInterval);
+        }, 120);
         showDemoMessage(siteTranslations.demo_searching || '正在搜尋台北 101...');
-    }, 500);
+    }, 600);
 
+    /* Show search result marker with bounce */
     setTimeout(() => {
-        demoMapInstance.setView([taipei101Lat, taipei101Lon], 16, { animate: true, duration: 1.5 });
-        demoMapSearchMarker = L.marker([taipei101Lat, taipei101Lon], {
+        demoMapInstance.setView(taipei101, 16, { animate: true, duration: 1.2 });
+        demoMapSearchMarker = L.marker(taipei101, {
             icon: L.divIcon({
-                className: 'demo-search-marker',
-                html: '<div style="width:14px;height:14px;background:var(--green);border:3px solid #fff;border-radius:50%;box-shadow:0 0 12px var(--green);"></div>',
-                iconSize: [14, 14], iconAnchor: [7, 7]
+                className: 'demo-search-result',
+                html: '<div style="width:16px;height:16px;background:var(--green);border:3px solid #fff;border-radius:50%;box-shadow:0 0 16px var(--green), 0 0 32px rgba(34,197,94,.3);"></div>',
+                iconSize: [16, 16], iconAnchor: [8, 8]
             })
         }).addTo(demoMapInstance);
         showDemoMessage(siteTranslations.demo_found || '找到台北 101！');
-    }, 2000);
+    }, 2200);
 
+    /* Press GO button */
     setTimeout(() => {
-        if (goBtn) { goBtn.style.transform = 'scale(0.93)'; setTimeout(() => goBtn.style.transform = '', 150); }
+        if (goBtn) {
+            goBtn.style.transform = 'scale(0.88)';
+            goBtn.style.boxShadow = '0 0 20px rgba(34,197,94,.4)';
+            setTimeout(() => { goBtn.style.transform = ''; goBtn.style.boxShadow = ''; }, 250);
+        }
         showDemoMessage(siteTranslations.demo_go || '按下 GO');
     }, 3500);
 
+    /* Teleport done */
     setTimeout(() => {
         if (demoMapSearchMarker) { demoMapInstance.removeLayer(demoMapSearchMarker); demoMapSearchMarker = null; }
-        const cur = demoMapMarker.getLatLng();
-        const target = [taipei101Lat, taipei101Lon];
-        let start = Date.now();
-        (function animate() {
-            const p = Math.min((Date.now() - start) / 2000, 1);
-            const e = 1 - Math.pow(1 - p, 3);
-            demoMapMarker.setLatLng([cur.lat + (target[0] - cur.lat) * e, cur.lng + (target[1] - cur.lng) * e]);
-            if (p < 1) requestAnimationFrame(animate); else demoMapMarker.setLatLng(target);
-        })();
-        showDemoMessage(siteTranslations.demo_flying_taipei || '正在飛往台北 101...');
-    }, 4000);
+        showDemoMessage('✓ ' + (siteTranslations.demo_flying_taipei || '已瞬移到台北 101'));
+    }, 4200);
+
+    /* ======= PHASE 2: Route/散花 animation (6-14s) ======= */
+    setTimeout(() => {
+        /* Switch to route tab */
+        document.querySelectorAll('.demo-tab-btn').forEach(b => b.classList.remove('active'));
+        routeTab.classList.add('active');
+        searchInput.style.display = 'none';
+        showDemoMessage('切換到散花模式 — 設定路線經由點');
+    }, 6000);
 
     setTimeout(() => {
-        if (demoMapSearchMarker) { demoMapInstance.removeLayer(demoMapSearchMarker); demoMapSearchMarker = null; }
+        /* Zoom to show the route area */
+        const bounds = L.latLngBounds(routeWaypoints);
+        demoMapInstance.fitBounds(bounds.pad(0.15), { animate: true, duration: 1 });
+
+        /* Press GO to start route */
+        if (goBtn) {
+            goBtn.style.transform = 'scale(0.88)';
+            goBtn.style.boxShadow = '0 0 20px rgba(34,197,94,.4)';
+            setTimeout(() => { goBtn.style.transform = ''; goBtn.style.boxShadow = ''; }, 250);
+        }
+        showDemoMessage('散花路徑啟動 — 自動沿路線移動中...');
+    }, 7500);
+
+    setTimeout(() => {
+        /* Animate walking the route */
+        demoAnimateRoute(routeWaypoints, 5000, () => {
+            showDemoMessage('散花路線完成！回到起點');
+        });
+    }, 8500);
+
+    /* Press STOP after route completes */
+    setTimeout(() => {
+        if (stopBtn) {
+            stopBtn.style.transform = 'scale(0.88)';
+            stopBtn.style.boxShadow = '0 0 20px rgba(239,68,68,.4)';
+            setTimeout(() => { stopBtn.style.transform = ''; stopBtn.style.boxShadow = ''; }, 250);
+        }
+        /* Clean up route visuals */
+        if (demoRouteLine) { demoMapInstance.removeLayer(demoRouteLine); demoRouteLine = null; }
+        demoRouteWaypoints.forEach(m => demoMapInstance.removeLayer(m));
+        demoRouteWaypoints = [];
+        showDemoMessage('按下 STOP — 模擬已停止');
+    }, 14500);
+
+    /* ======= PHASE 3: Favorites + Fly to Tokyo (15-22s) ======= */
+    setTimeout(() => {
         document.querySelectorAll('.demo-tab-btn').forEach(b => b.classList.remove('active'));
         favTab.classList.add('active');
         demoFavorites.style.display = 'block';
         addBtn.style.display = 'block';
         showDemoMessage(siteTranslations.demo_switch_fav || '切換到最愛模式');
-    }, 6500);
+    }, 15500);
 
+    /* Add to favorites */
     setTimeout(() => {
-        addBtn.style.transform = 'scale(0.95)';
-        setTimeout(() => addBtn.style.transform = '', 150);
+        addBtn.style.transform = 'scale(0.92)';
+        addBtn.style.background = 'var(--accent)';
+        addBtn.style.color = '#fff';
+        setTimeout(() => { addBtn.style.transform = ''; addBtn.style.background = ''; addBtn.style.color = ''; }, 300);
         showDemoMessage(siteTranslations.demo_save_fav || '儲存「台北101」到最愛');
-    }, 8000);
+    }, 17000);
 
+    /* Show saved + add Tokyo item */
     setTimeout(() => {
         const grid = demoFavorites.querySelector('.demo-fav-item')?.parentElement;
-        if (grid && !grid.querySelector('[data-name="東京"]')) {
+        if (grid && !grid.querySelector('[data-name="東京鐵塔"]')) {
             const item = document.createElement('div');
             item.className = 'demo-fav-item';
-            item.style.cssText = 'background:var(--surface);border-radius:12px;height:48px;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;border:1px solid var(--border);font-size:.82rem;';
-            item.textContent = '東京';
-            item.setAttribute('data-lat', tokyoLat);
-            item.setAttribute('data-lon', tokyoLon);
-            item.setAttribute('data-name', '東京');
+            item.style.cssText = 'background:var(--surface);border-radius:12px;height:48px;display:flex;align-items:center;justify-content:center;font-weight:700;cursor:pointer;border:1px solid var(--border);font-size:.82rem;opacity:0;transform:scale(.9);transition:all .3s;';
+            item.textContent = '東京鐵塔';
+            item.setAttribute('data-name', '東京鐵塔');
             grid.appendChild(item);
+            requestAnimationFrame(() => { item.style.opacity = '1'; item.style.transform = 'scale(1)'; });
         }
         showDemoMessage(siteTranslations.demo_saved || '已儲存到最愛清單');
-    }, 9500);
+    }, 18000);
 
+    /* Click Tokyo favorite */
     setTimeout(() => {
-        const item = demoFavorites.querySelector('[data-name="東京"]');
-        if (item) { item.style.background = 'var(--accent-bg)'; item.style.border = '2px solid var(--accent)'; }
+        const item = demoFavorites.querySelector('[data-name="東京鐵塔"]');
+        if (item) {
+            item.style.background = 'var(--accent)';
+            item.style.color = '#fff';
+            item.style.border = '2px solid var(--accent)';
+            item.style.transform = 'scale(0.95)';
+            setTimeout(() => { item.style.transform = 'scale(1)'; }, 150);
+        }
         showDemoMessage(siteTranslations.demo_click_fav || '點擊最愛地點：東京');
-    }, 11000);
+    }, 19500);
 
+    /* Fly to Tokyo */
     setTimeout(() => {
         document.querySelectorAll('.demo-tab-btn').forEach(b => b.classList.remove('active'));
         tpTab.classList.add('active');
         demoFavorites.style.display = 'none';
         addBtn.style.display = 'none';
-        searchInput.style.display = 'none';
 
-        demoMapInstance.setView([tokyoLat, tokyoLon], 13, { animate: true, duration: 1.5 });
-        const cur = demoMapMarker.getLatLng();
-        const target = [tokyoLat, tokyoLon];
-        let start = Date.now();
-        (function animate() {
-            const p = Math.min((Date.now() - start) / 2500, 1);
-            const e = 1 - Math.pow(1 - p, 3);
-            demoMapMarker.setLatLng([cur.lat + (target[0] - cur.lat) * e, cur.lng + (target[1] - cur.lng) * e]);
-            if (p < 1) requestAnimationFrame(animate); else demoMapMarker.setLatLng(target);
-        })();
+        demoMapInstance.setView(tokyoTower, 15, { animate: true, duration: 2 });
+        demoFlyTo(tokyoTower, 2500);
         showDemoMessage(siteTranslations.demo_flying_tokyo || '正在飛往東京...');
-    }, 12500);
+    }, 21000);
 
-    setTimeout(() => showDemoMessage(siteTranslations.demo_arrived || '已到達東京！'), 15000);
+    /* Arrived */
+    setTimeout(() => {
+        showDemoMessage('✓ ' + (siteTranslations.demo_arrived || '已到達東京！'));
+    }, 24000);
 
+    /* ======= PHASE 4: Reset (25s) ======= */
     setTimeout(() => {
         searchInput.value = '';
         searchInput.style.background = 'var(--surface-2)';
@@ -1155,16 +1371,20 @@ function startDemoAnimation() {
         tpTab.classList.add('active');
         demoFavorites.style.display = 'none';
         addBtn.style.display = 'none';
-        const tokyo = demoFavorites.querySelector('[data-name="東京"]');
+        const tokyo = demoFavorites.querySelector('[data-name="東京鐵塔"]');
         if (tokyo) tokyo.remove();
         if (demoMapSearchMarker) { demoMapInstance.removeLayer(demoMapSearchMarker); demoMapSearchMarker = null; }
-        demoMapInstance.setView([tainanLat, tainanLon], 13, { animate: true, duration: 0.5 });
-        demoMapMarker.setLatLng([tainanLat, tainanLon]);
+        if (demoRouteLine) { demoMapInstance.removeLayer(demoRouteLine); demoRouteLine = null; }
+        demoRouteWaypoints.forEach(m => demoMapInstance.removeLayer(m));
+        demoRouteWaypoints = [];
+        demoMapInstance.setView(taipei101, 14, { animate: true, duration: 0.5 });
+        demoMapMarker.setLatLng(taipei101);
+        if (coordEl) coordEl.textContent = '25.033963, 121.564472';
         hideDemoMessage();
         playBtn.disabled = false;
         playBtn.innerHTML = '<svg viewBox="0 0 18 18" width="18" height="18" fill="none"><polygon points="5,2 15,9 5,16" fill="var(--accent)"/></svg> ' + (siteTranslations.showcase_play || '播放完整動畫演示');
         demoAnimationRunning = false;
-    }, 17000);
+    }, 26000);
 }
 
 window.addEventListener('load', () => setTimeout(initDemoMap, 500));
@@ -1176,25 +1396,26 @@ function showDemoMessage(text) {
         msg.id = 'demo-message';
         Object.assign(msg.style, {
             position:'absolute', top:'16px', left:'50%', transform:'translateX(-50%)',
-            background:'rgba(15,23,42,.85)', color:'#fff', padding:'10px 20px',
+            background:'rgba(15,23,42,.88)', color:'#fff', padding:'10px 24px',
             borderRadius:'999px', fontSize:'.82rem', fontWeight:'600',
-            zIndex:'2000', boxShadow:'0 4px 12px rgba(0,0,0,.2)',
-            backdropFilter:'blur(8px)', opacity:'0', transition:'all .3s'
+            zIndex:'2000', boxShadow:'0 4px 20px rgba(0,0,0,.25)',
+            backdropFilter:'blur(12px)', opacity:'0', transition:'all .35s cubic-bezier(.4,0,.2,1)',
+            whiteSpace:'nowrap', letterSpacing:'.3px'
         });
         document.getElementById('fullAppDemo').appendChild(msg);
     }
     msg.textContent = text;
     msg.style.opacity = '0';
-    msg.style.transform = 'translateX(-50%) translateY(-8px)';
-    setTimeout(() => { msg.style.opacity = '1'; msg.style.transform = 'translateX(-50%) translateY(0)'; }, 10);
+    msg.style.transform = 'translateX(-50%) translateY(-10px) scale(.95)';
+    setTimeout(() => { msg.style.opacity = '1'; msg.style.transform = 'translateX(-50%) translateY(0) scale(1)'; }, 20);
 }
 
 function hideDemoMessage() {
     const msg = document.getElementById('demo-message');
     if (msg) {
         msg.style.opacity = '0';
-        msg.style.transform = 'translateX(-50%) translateY(-8px)';
-        setTimeout(() => { if (msg.parentNode) msg.parentNode.removeChild(msg); }, 300);
+        msg.style.transform = 'translateX(-50%) translateY(-10px) scale(.95)';
+        setTimeout(() => { if (msg.parentNode) msg.parentNode.removeChild(msg); }, 350);
     }
 }
 
