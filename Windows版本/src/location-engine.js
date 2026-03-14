@@ -218,55 +218,144 @@ class LocationEngine {
         }
     }
 
-    // ===== 步驟 1.5: 啟用開發者模式 =====
-    // useTunnel: true 時用 --tunnel 參數（隧道建立後更可靠）
-    async enableDeveloperMode(useTunnel = false) {
+    // ===== 步驟 1.5: 檢查開發者模式狀態 =====
+    async checkDeveloperModeStatus() {
+        if (!this.udid) return { enabled: false, unknown: true };
+        try {
+            const cmd = this._getCmd(`amfi developer-mode-status --udid ${this.udid}`);
+            console.log('[amfi] 檢查開發者模式狀態:', cmd);
+            const { stdout, stderr } = await execAsync(cmd, { timeout: 15000 });
+            const output = (stdout + ' ' + stderr).toLowerCase();
+            console.log('[amfi] 狀態檢查 stdout:', stdout.trim());
+            console.log('[amfi] 狀態檢查 stderr:', stderr.trim());
+
+            if (output.includes('enabled') || output.includes('true') || output.includes('developer mode is on')) {
+                return { enabled: true };
+            }
+            if (output.includes('disabled') || output.includes('false') || output.includes('developer mode is off')) {
+                return { enabled: false };
+            }
+            return { enabled: false, unknown: true };
+        } catch (error) {
+            console.log('[amfi] 狀態檢查失敗:', error.message);
+            return { enabled: false, unknown: true };
+        }
+    }
+
+    // ===== 步驟 1.5b: 顯示開發者模式開關（reveal，非 enable） =====
+    // reveal-developer-mode: 讓「設定 > 隱私權與安全性 > 開發者模式」選項可見
+    // 重要：enable-developer-mode 在有密碼鎖的 iPhone 上會失敗（DeviceHasPasscodeSetError）
+    // reveal 只是讓開關顯現，用戶需要自行到設定中手動開啟
+    async revealDeveloperMode() {
         if (!this.udid) {
             return { success: false, error: '尚未連接設備' };
         }
 
-        // 方法 1: 透過 lockdown（USB 直連）
+        // 先檢查是否已經啟用
+        const status = await this.checkDeveloperModeStatus();
+        if (status.enabled) {
+            console.log('[amfi] 開發者模式已啟用，跳過 reveal');
+            return { success: true, alreadyEnabled: true, message: '開發者模式已啟用' };
+        }
+
+        // 使用 reveal-developer-mode（不是 enable-developer-mode）
+        // reveal 通過 lockdown（USB 直連），不需要 tunnel
         try {
-            console.log(`[amfi] 嘗試啟用開發者模式 (tunnel=${useTunnel})...`);
-            const tunnelFlag = useTunnel ? ' --tunnel' : '';
-            const cmd = this._getCmd(`amfi enable-developer-mode --udid ${this.udid}${tunnelFlag}`);
+            console.log('[amfi] 嘗試 reveal-developer-mode（讓設定中的開關可見）...');
+            const cmd = this._getCmd(`amfi reveal-developer-mode --udid ${this.udid}`);
             console.log('[amfi] 執行指令:', cmd);
-            const { stdout, stderr } = await execAsync(cmd, { timeout: 30000 });
-            const output = (stdout + ' ' + stderr).toLowerCase();
-            const fullOutput = stdout + '\n' + stderr;
-            console.log('[amfi] stdout:', stdout.substring(0, 500));
-            console.log('[amfi] stderr:', stderr.substring(0, 500));
 
-            if (output.includes('success') || output.includes('already')) {
-                return { success: true, message: '開發者模式已啟用' };
-            } else if (output.includes('error') || output.includes('failed') || output.includes('exception')) {
-                // 如果不是用 tunnel 模式，嘗試 tunnel 模式
-                if (!useTunnel && this.tunnelRunning) {
-                    console.log('[amfi] lockdown 模式失敗，嘗試 tunnel 模式...');
-                    return await this.enableDeveloperMode(true);
+            // 在 Windows 上用管理員權限執行（USB 存取可能需要）
+            const logPath = path.join(app.getPath('userData'), 'amfi.log');
+            try { fs.unlinkSync(logPath); } catch (e) { /* 沒有舊日誌 */ }
+
+            const pythonPath = this._getPythonPath();
+            const isBundledExe = this._depInstaller && fs.existsSync(this._depInstaller.bundledExe);
+            const batchPath = path.join(app.getPath('userData'), 'run-amfi.bat');
+
+            let batchCmd;
+            if (isBundledExe) {
+                batchCmd = `"${pythonPath}" amfi reveal-developer-mode --udid ${this.udid}`;
+            } else {
+                batchCmd = `"${pythonPath}" -m pymobiledevice3 amfi reveal-developer-mode --udid ${this.udid}`;
+            }
+
+            const batchContent = `@echo off\r\n${batchCmd} > "${logPath}" 2>&1\r\n`;
+            fs.writeFileSync(batchPath, batchContent);
+
+            // 先嘗試不提權直接執行（amfi reveal 通常不需要管理員）
+            try {
+                const { stdout, stderr } = await execAsync(cmd, { timeout: 20000 });
+                const output = (stdout + ' ' + stderr).toLowerCase();
+                const fullOutput = stdout + '\n' + stderr;
+                console.log('[amfi] reveal stdout:', stdout.trim());
+                console.log('[amfi] reveal stderr:', stderr.trim());
+
+                if (output.includes('success') || output.includes('already') || output.includes('revealed')) {
+                    return { success: true, message: '開發者模式開關已顯示於設定中' };
                 }
-                return {
-                    success: false,
-                    needsTutorial: true,
-                    error: `無法自動啟用：${fullOutput.substring(0, 200)}`
-                };
+                // 有實際錯誤內容
+                if (output.includes('error') || output.includes('failed') || output.includes('passcode') || output.includes('exception')) {
+                    console.log('[amfi] reveal 直接執行有錯誤，嘗試提權...');
+                    throw new Error(fullOutput.substring(0, 200));
+                }
+                // 空輸出 → 可能靜默失敗，嘗試提權
+                if (stdout.trim() === '' && stderr.trim() === '') {
+                    console.log('[amfi] reveal 空輸出，嘗試提權執行...');
+                    throw new Error('empty output');
+                }
+                // 有某些輸出但不包含 success → 可能成功了
+                return { success: true, message: '開發者模式指令已執行' };
+            } catch (directError) {
+                // 直接執行失敗，嘗試用管理員權限
+                console.log('[amfi] 嘗試提權執行 reveal...');
+                try {
+                    await execAsync(
+                        `powershell -Command "Start-Process -Verb RunAs -FilePath '${batchPath}' -Wait -WindowStyle Hidden"`,
+                        { timeout: 30000 }
+                    );
+
+                    // 讀取日誌
+                    await this._sleep(1000);
+                    let logContent = '';
+                    try {
+                        logContent = fs.readFileSync(logPath, 'utf8');
+                    } catch (e) { /* 讀不到日誌 */ }
+
+                    console.log('[amfi] 提權 reveal 日誌:', logContent.substring(0, 500));
+                    const logLower = logContent.toLowerCase();
+
+                    if (logLower.includes('success') || logLower.includes('already') || logLower.includes('revealed')) {
+                        return { success: true, message: '開發者模式開關已顯示（提權）' };
+                    }
+                    if (logContent.trim() === '') {
+                        // 提權後空輸出 → 可能有執行但無 feedback
+                        return {
+                            success: false,
+                            needsTutorial: true,
+                            message: '已嘗試顯示開發者模式開關，請檢查 iPhone 設定'
+                        };
+                    }
+                    return {
+                        success: false,
+                        needsTutorial: true,
+                        error: `reveal 執行結果：${logContent.substring(0, 200)}`
+                    };
+                } catch (uacError) {
+                    console.log('[amfi] UAC 被拒絕:', uacError.message);
+                    return {
+                        success: false,
+                        needsTutorial: true,
+                        error: '需要管理員權限。請在彈出的 UAC 視窗中點擊「是」。'
+                    };
+                }
             }
-            // 空輸出也當作成功嘗試過了
-            return { success: true, message: '開發者模式指令已執行（無輸出）' };
         } catch (error) {
-            const errMsg = (error.stderr || error.message || '').toLowerCase();
-            console.log('[amfi] 執行錯誤:', error.stderr || error.message);
-
-            // 如果 lockdown 失敗且有 tunnel，用 tunnel 重試
-            if (!useTunnel && this.tunnelRunning) {
-                console.log('[amfi] lockdown 失敗，嘗試 tunnel 模式...');
-                return await this.enableDeveloperMode(true);
-            }
-
+            console.log('[amfi] reveal 執行錯誤:', error.message);
             return {
                 success: false,
                 needsTutorial: true,
-                error: `開發者模式啟用失敗：${error.message}`
+                error: `開發者模式 reveal 失敗：${error.message}`
             };
         }
     }
@@ -436,7 +525,8 @@ class LocationEngine {
         return { success: false, error: errorMsg };
     }
 
-    // ===== 完整連線流程：detect → tunnel → amfi → ready =====
+    // ===== 完整連線流程：detect → amfi(reveal) → tunnel → ready =====
+    // 順序依照 macOS 版本驗證：amfi 用 lockdown（USB），不需要 tunnel
     async fullConnect(onProgress) {
         // Step 1: 偵測設備
         if (onProgress) onProgress('正在偵測設備...');
@@ -450,7 +540,14 @@ class LocationEngine {
         const iosVer = parseFloat(this.iosVersion) || 0;
         const needsTunnel = iosVer >= 17 || iosVer === 0; // 版本不明時也嘗試
 
-        // Step 2: 先啟動隧道（iOS 17+ 必要，amfi 也可能需要隧道）
+        // Step 2: 先執行 amfi reveal（在隧道之前，用 lockdown USB 直連）
+        // reveal-developer-mode 讓開發者模式開關顯示在 iPhone 設定中
+        if (onProgress) onProgress('正在設定開發者模式...');
+        const amfiResult = await this.revealDeveloperMode();
+        console.log('[fullConnect] amfi reveal 結果:', JSON.stringify(amfiResult));
+        const devModeAlreadyEnabled = amfiResult.alreadyEnabled === true;
+
+        // Step 3: 啟動隧道（iOS 17+ 必要，用於 DVT simulate-location）
         if (needsTunnel) {
             if (await this.isTunnelRunning()) {
                 console.log('[fullConnect] 隧道已在運行，跳過啟動');
@@ -462,18 +559,12 @@ class LocationEngine {
                     return {
                         success: false,
                         deviceDetected: true,
-                        needsTutorial: true,
+                        needsTutorial: !devModeAlreadyEnabled,
                         error: tunnelResult.error
                     };
                 }
             }
         }
-
-        // Step 3: 隧道建立後才執行 amfi（更可靠）
-        if (onProgress) onProgress('正在啟用開發者模式...');
-        const amfiResult = await this.enableDeveloperMode(false);
-        console.log('[fullConnect] amfi 結果:', JSON.stringify(amfiResult));
-        // 不管成功失敗都繼續
 
         // Step 4: 確認一切就緒
         if (onProgress) onProgress('連線就緒');
@@ -484,8 +575,8 @@ class LocationEngine {
             iosVersion: this.iosVersion,
             tunnelActive: needsTunnel,
             amfiResult: amfiResult.success ? 'ok' : 'manual',
-            // 首次連線一律提示用戶檢查開發者模式
-            showTutorial: true
+            // 如果開發者模式還沒啟用，顯示教學
+            showTutorial: !devModeAlreadyEnabled
         };
     }
 
