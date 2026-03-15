@@ -62,6 +62,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     private var tunnelWasRunning: Bool = false
     private var tunnelConsecutiveFailures: Int = 0  // 連續偵測失敗次數（需 2 次才判定斷線）
     private var helperPingTimer: Timer?  // PING 心跳計時器
+    private let watchdogQueue = DispatchQueue(label: "pikmin.watchdog")
+    private var isWatchdogRestarting: Bool = false
     
     // 腳步擺動相關
     private var cruiseStepPhase: Double = 0.0
@@ -380,6 +382,9 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                         }
                     } else if line == "PONG" || line == "PONG:DEGRADED" {
                         if line.contains("DEGRADED") { self.helperDegraded = true }
+                    } else if line.hasPrefix("TUNNEL_DOWN:") {
+                        print("⚠️ [Helper] 收到 TUNNEL_DOWN 信號: \(line)")
+                        self.checkTunnelHealth()
                     }
                 }
             }
@@ -470,8 +475,8 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
         stopTunnelWatchdog()
         tunnelWasRunning = true
         tunnelConsecutiveFailures = 0
-        // 15 秒間隔（匹配穩定版，減少誤判）
-        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+        // 5 秒間隔（快速偵測斷線）
+        tunnelWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
             self?.checkTunnelHealth()
         }
         if let t = tunnelWatchdogTimer { RunLoop.current.add(t, forMode: .common) }
@@ -507,8 +512,9 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
     }
 
     private func checkTunnelHealth() {
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        watchdogQueue.async { [weak self] in
             guard let self = self else { return }
+            guard !self.isWatchdogRestarting else { return }
 
             let alive = self.isTunnelRunning()
 
@@ -594,6 +600,64 @@ final class LocationEngine: NSObject, ObservableObject, WKScriptMessageHandler, 
                     self.tunnelWasRunning = true
                     print("[Watchdog] 隧道自動重啟成功（第 \(attempt) 秒）")
                     // 多等幾秒讓隧道穩定
+                    Thread.sleep(forTimeInterval: 3.0)
+                    self.lastHelperRestart = Date()
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        self.startHelper()
+                        if self.helperReady {
+                            self.blastCurrentPosition()
+                            DispatchQueue.main.async {
+                                self.webView?.evaluateJavaScript("setUI('online', ' 已連線（自動恢復）')")
+                            }
+                        } else {
+                            DispatchQueue.main.async {
+                                self.webView?.evaluateJavaScript("setUI('error', '隧道已恢復但連線失敗，請手動重連')")
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+
+            // sudo -n 重啟失敗（沒有 NOPASSWD 快取）→ osascript fallback：彈管理員密碼視窗
+            print("[Watchdog] sudo -n 重啟失敗，嘗試 osascript 管理員權限重啟")
+            self.isWatchdogRestarting = true
+            defer { self.isWatchdogRestarting = false }
+
+            let pythonPath = self.resolvePythonPath()
+            let sudoersContent = "# pikmin tunneld sudoers\\nALL ALL=(ALL) NOPASSWD: \(pythonPath) -m pymobiledevice3 remote tunneld\\n"
+            let relaunchScript = """
+#!/bin/bash
+rm -f /tmp/pymobiledevice3_tunnel.log
+touch /tmp/pymobiledevice3_tunnel.log
+chmod 666 /tmp/pymobiledevice3_tunnel.log
+"\(pythonPath)" -m pymobiledevice3 remote tunneld > /tmp/pymobiledevice3_tunnel.log 2>&1 &
+"""
+            // Write temp files
+            try? sudoersContent.write(toFile: "/tmp/pikmin_sudoers_tmp", atomically: true, encoding: .utf8)
+            try? relaunchScript.write(toFile: "/tmp/pikmin_watchdog_relaunch.sh", atomically: true, encoding: .utf8)
+
+            let osascriptCmd = """
+do shell script "cp /tmp/pikmin_sudoers_tmp /etc/sudoers.d/pikmin_tunneld && chmod 0440 /etc/sudoers.d/pikmin_tunneld && /bin/bash /tmp/pikmin_watchdog_relaunch.sh" with administrator privileges
+"""
+            var osascriptError: NSDictionary?
+            if let script = NSAppleScript(source: osascriptCmd) {
+                script.executeAndReturnError(&osascriptError)
+            }
+            if let err = osascriptError {
+                print("[Watchdog] osascript 失敗: \(err)")
+                DispatchQueue.main.async {
+                    self.webView?.evaluateJavaScript("setUI('error', '隧道已斷線，請點擊初始化連線')")
+                }
+                return
+            }
+
+            // 等待 osascript 重啟後的隧道就緒
+            for attempt in 1...15 {
+                usleep(1_000_000)
+                if self.isTunnelRunning() {
+                    self.tunnelWasRunning = true
+                    print("[Watchdog] osascript 重啟成功（第 \(attempt) 秒）")
                     Thread.sleep(forTimeInterval: 3.0)
                     self.lastHelperRestart = Date()
                     DispatchQueue.global(qos: .userInitiated).async {

@@ -302,6 +302,7 @@ class LocationEngine:
                 if attempt < max_attempts - 1:
                     time.sleep(1.0)
                 else:
+                    print("TUNNEL_DOWN:49151", flush=True)
                     return None
 
         if not devices:

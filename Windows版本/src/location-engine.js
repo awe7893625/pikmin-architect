@@ -25,6 +25,12 @@ class LocationEngine {
         this.itunesInstalled = null; // cache
         this.tunnelRunning = false;
         this.tunnelLogPath = null; // 設定在第一次使用時
+
+        // Tunnel watchdog state
+        this.watchdogInterval = null;
+        this.watchdogFailCount = 0;
+        this.isConnecting = false; // 防止 fullConnect() 進行中觸發 watchdog
+        this.onTunnelStatus = null; // 外部可設定的狀態回呼 (alive: boolean)
     }
 
     // 注入 DependencyInstaller 實例（由 main.js 設定）
@@ -528,56 +534,68 @@ class LocationEngine {
     // ===== 完整連線流程：detect → amfi(reveal) → tunnel → ready =====
     // 順序依照 macOS 版本驗證：amfi 用 lockdown（USB），不需要 tunnel
     async fullConnect(onProgress) {
-        // Step 1: 偵測設備
-        if (onProgress) onProgress('正在偵測設備...');
-        const detectResult = await this.detectDevice();
-        if (!detectResult.success) {
-            return detectResult;
-        }
-        if (onProgress) onProgress(`找到 ${detectResult.deviceName || 'iPhone'}...`);
+        this.isConnecting = true;
+        // 連線開始前停止舊的 watchdog（重新連線情境）
+        this.stopTunnelWatchdog();
 
-        // 判斷 iOS 版本是否需要隧道
-        const iosVer = parseFloat(this.iosVersion) || 0;
-        const needsTunnel = iosVer >= 17 || iosVer === 0; // 版本不明時也嘗試
-
-        // Step 2: 先執行 amfi reveal（在隧道之前，用 lockdown USB 直連）
-        // reveal-developer-mode 讓開發者模式開關顯示在 iPhone 設定中
-        if (onProgress) onProgress('正在設定開發者模式...');
-        const amfiResult = await this.revealDeveloperMode();
-        console.log('[fullConnect] amfi reveal 結果:', JSON.stringify(amfiResult));
-        const devModeAlreadyEnabled = amfiResult.alreadyEnabled === true;
-
-        // Step 3: 啟動隧道（iOS 17+ 必要，用於 DVT simulate-location）
-        if (needsTunnel) {
-            if (await this.isTunnelRunning()) {
-                console.log('[fullConnect] 隧道已在運行，跳過啟動');
-                if (onProgress) onProgress('隧道已運行');
-            } else {
-                if (onProgress) onProgress('正在啟動安全隧道（需要管理員權限）...');
-                const tunnelResult = await this.startTunnel(onProgress);
-                if (!tunnelResult.success) {
-                    return {
-                        success: false,
-                        deviceDetected: true,
-                        needsTutorial: !devModeAlreadyEnabled,
-                        error: tunnelResult.error
-                    };
-                }
+        try {
+            // Step 1: 偵測設備
+            if (onProgress) onProgress('正在偵測設備...');
+            const detectResult = await this.detectDevice();
+            if (!detectResult.success) {
+                return detectResult;
             }
-        }
+            if (onProgress) onProgress(`找到 ${detectResult.deviceName || 'iPhone'}...`);
 
-        // Step 4: 確認一切就緒
-        if (onProgress) onProgress('連線就緒');
-        return {
-            success: true,
-            udid: this.udid,
-            deviceName: this.deviceName,
-            iosVersion: this.iosVersion,
-            tunnelActive: needsTunnel,
-            amfiResult: amfiResult.success ? 'ok' : 'manual',
-            // 如果開發者模式還沒啟用，顯示教學
-            showTutorial: !devModeAlreadyEnabled
-        };
+            // 判斷 iOS 版本是否需要隧道
+            const iosVer = parseFloat(this.iosVersion) || 0;
+            const needsTunnel = iosVer >= 17 || iosVer === 0; // 版本不明時也嘗試
+
+            // Step 2: 先執行 amfi reveal（在隧道之前，用 lockdown USB 直連）
+            // reveal-developer-mode 讓開發者模式開關顯示在 iPhone 設定中
+            if (onProgress) onProgress('正在設定開發者模式...');
+            const amfiResult = await this.revealDeveloperMode();
+            console.log('[fullConnect] amfi reveal 結果:', JSON.stringify(amfiResult));
+            const devModeAlreadyEnabled = amfiResult.alreadyEnabled === true;
+
+            // Step 3: 啟動隧道（iOS 17+ 必要，用於 DVT simulate-location）
+            if (needsTunnel) {
+                if (await this.isTunnelRunning()) {
+                    console.log('[fullConnect] 隧道已在運行，跳過啟動');
+                    if (onProgress) onProgress('隧道已運行');
+                } else {
+                    if (onProgress) onProgress('正在啟動安全隧道（需要管理員權限）...');
+                    const tunnelResult = await this.startTunnel(onProgress);
+                    if (!tunnelResult.success) {
+                        return {
+                            success: false,
+                            deviceDetected: true,
+                            needsTutorial: !devModeAlreadyEnabled,
+                            error: tunnelResult.error
+                        };
+                    }
+                }
+
+                // Step 3b: 隧道確認就緒後啟動 watchdog
+                this.startTunnelWatchdog();
+            }
+
+            // Step 4: 確認一切就緒
+            if (onProgress) onProgress('連線就緒');
+            return {
+                success: true,
+                udid: this.udid,
+                deviceName: this.deviceName,
+                iosVersion: this.iosVersion,
+                tunnelActive: needsTunnel,
+                amfiResult: amfiResult.success ? 'ok' : 'manual',
+                // 如果開發者模式還沒啟用，顯示教學
+                showTutorial: !devModeAlreadyEnabled
+            };
+        } finally {
+            // 無論成功或失敗都解除 isConnecting，讓 watchdog 可以正常運作
+            this.isConnecting = false;
+        }
     }
 
     // 瞬移功能
@@ -678,6 +696,74 @@ class LocationEngine {
                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    // ===== Tunnel Watchdog =====
+
+    // 啟動 watchdog：每 10 秒確認隧道仍在運行，連續 2 次失敗後自動重啟
+    startTunnelWatchdog() {
+        if (this.watchdogInterval) {
+            // 已在運行，不重複啟動
+            return;
+        }
+        this.watchdogFailCount = 0;
+        console.log('[watchdog] 啟動隧道監控（每 10 秒）');
+
+        this.watchdogInterval = setInterval(async () => {
+            // fullConnect() 進行中時跳過，避免干擾初始化
+            if (this.isConnecting) return;
+
+            const alive = await this.isTunnelRunning();
+
+            if (alive) {
+                if (this.watchdogFailCount > 0) {
+                    console.log('[watchdog] 隧道已恢復');
+                }
+                this.watchdogFailCount = 0;
+                if (this.onTunnelStatus) this.onTunnelStatus({ alive: true });
+            } else {
+                this.watchdogFailCount++;
+                console.log(`[watchdog] 隧道未偵測到（連續 ${this.watchdogFailCount} 次）`);
+                if (this.onTunnelStatus) this.onTunnelStatus({ alive: false });
+
+                if (this.watchdogFailCount >= 2) {
+                    // 重置計數後嘗試重啟，避免重啟期間重複觸發
+                    this.watchdogFailCount = 0;
+                    await this._autoRestartTunnel();
+                }
+            }
+        }, 10000);
+    }
+
+    // 停止 watchdog
+    stopTunnelWatchdog() {
+        if (this.watchdogInterval) {
+            clearInterval(this.watchdogInterval);
+            this.watchdogInterval = null;
+            console.log('[watchdog] 已停止隧道監控');
+        }
+        this.watchdogFailCount = 0;
+    }
+
+    // 自動重啟隧道（watchdog 內部使用）
+    async _autoRestartTunnel() {
+        console.log('[watchdog] 隧道已斷線，正在自動重啟...');
+        const result = await this.startTunnel((msg) => console.log('[watchdog]', msg));
+        if (result.success) {
+            console.log('[watchdog] 隧道自動重啟成功');
+            this.watchdogFailCount = 0;
+        } else {
+            console.log('[watchdog] 隧道自動重啟失敗:', result.error);
+        }
+        return result;
+    }
+
+    // 斷線清理（停止 watchdog + 路線模擬）
+    disconnect() {
+        this.stopTunnelWatchdog();
+        this.stop();
+        this.tunnelRunning = false;
+        console.log('[disconnect] 已斷線並清理資源');
     }
 
     stop() {
