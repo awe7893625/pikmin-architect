@@ -17,7 +17,7 @@ const ADMIN_KEY = process.env.ADMIN_KEY || 'default-admin-key-change-in-producti
 // 初始化一些測試授權碼（可選）
 if (licenses.size === 0) {
     // 可以手動添加測試授權碼
-    // licenses.set('PKM-TEST12345678', { deviceId: null, paidAt: new Date().toISOString(), isValid: true, createdAt: new Date().toISOString() });
+    // licenses.set('KGOO-TEST-0000-0001', { deviceId: null, paidAt: new Date().toISOString(), isValid: true, createdAt: new Date().toISOString() });
 }
 
 // API 端點
@@ -192,7 +192,8 @@ app.post('/api/admin/create-license', (req, res) => {
     }
     
     const crypto = require('crypto');
-    const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    const _hex = crypto.randomBytes(6).toString('hex').toUpperCase();
+    const licenseKey = `KGOO-${_hex.slice(0, 4)}-${_hex.slice(4, 8)}-${_hex.slice(8, 12)}`;
     
     licenses.set(licenseKey, {
         deviceId: deviceId || null,

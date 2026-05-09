@@ -65,7 +65,7 @@ echo ""
 echo -e "${YELLOW}🔑 測試 4: 激活授權碼${NC}"
 RESPONSE=$(curl -s -X POST $API_BASE/license/activate \
   -H "Content-Type: application/json" \
-  -d "{\"deviceId\": \"$DEVICE_ID\", \"licenseKey\": \"PKM-F7EC3C6305756F6C\"}")
+  -d "{\"deviceId\": \"$DEVICE_ID\", \"licenseKey\": \"KGOO-TEST-0000-0001\"}")
 echo "響應: $RESPONSE"
 IS_ACTIVATED=$(echo $RESPONSE | grep -o '"isActivated":true')
 if [ -n "$IS_ACTIVATED" ]; then

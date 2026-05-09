@@ -28,7 +28,7 @@
     <div class="card">
       <h2>1) 檢查授權碼</h2>
       <div class="row">
-        <input id="licenseKey" placeholder="例如：PKM-XXXXXXXXXXXXXXXX" autocomplete="off" />
+        <input id="licenseKey" placeholder="例如：KGOO-XXXX-XXXX-XXXX" autocomplete="off" />
         <button onclick="verify()">檢查</button>
       </div>
       <p id="result" class="muted" style="margin-top:10px;"></p>
@@ -86,8 +86,8 @@
         }
 
         result.innerHTML = `<span class="ok">授權碼有效</span>（方案：<code>${data.planType || 'unknown'}</code>）`;
-        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260215-reveal/ios-location-simulator-mac.dmg';
-        document.getElementById('winLink').href = data.download?.windows || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260215-reveal/ios-location-simulator-windows.exe';
+        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip';
+        document.getElementById('winLink').href = data.download?.windows || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe';
         dl.style.display = 'block';
       } catch (e) {
         result.innerHTML = '<span class="bad">檢查失敗，請稍後再試</span>';

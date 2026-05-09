@@ -38,6 +38,13 @@ function resolveCommitSha() {
 const SERVER_COMMIT = resolveCommitSha();
 const SERVER_ENTRY = 'website/server.js';
 
+// License key format: KGOO-XXXX-XXXX-XXXX (must match electron/license.js:116 regex)
+function generateLicenseKey() {
+    const crypto = require('crypto');
+    const hex = crypto.randomBytes(6).toString('hex').toUpperCase();
+    return `KGOO-${hex.slice(0, 4)}-${hex.slice(4, 8)}-${hex.slice(8, 12)}`;
+}
+
 // ========== 持久化存儲層（Vercel KV）==========
 // ⚠️ P0 必修：Fail Closed - KV 必須可用，否則授權系統不可用
 let kv = null;
@@ -657,7 +664,7 @@ app.post('/payment/success', async (req, res) => {
             const order = await getOrderFromKV(orderId);
             if (order && order.status !== 'paid') {
                 const crypto = require('crypto');
-                const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+                const licenseKey = generateLicenseKey();
                 order.status = 'paid';
                 order.licenseKey = licenseKey;
                 order.paidAt = new Date().toISOString();
@@ -1087,8 +1094,9 @@ app.post('/api/license/verify', async (req, res) => {
             valid: true,
             planType: license.planType || 'annual',
             download: {
-                mac: '/downloads/ios-location-simulator-mac.dmg',
-                windows: '/downloads/ios-location-simulator-windows.exe'
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip',
+                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip',
+                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe'
             }
         });
     } catch (error) {
@@ -1285,7 +1293,7 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
             const order = await getOrderFromKV(orderId);
             if (order && order.status !== 'paid') {
                 const crypto = require('crypto');
-                const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+                const licenseKey = generateLicenseKey();
 
                 order.status = 'paid';
                 order.licenseKey = licenseKey;
@@ -1332,7 +1340,7 @@ app.get('/api/payment/polar-confirm', async (req, res) => {
 
         // Polar success_url 被訪問 = 付款完成，直接發授權碼
         const crypto = require('crypto');
-        const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+        const licenseKey = generateLicenseKey();
 
         order.status = 'paid';
         order.licenseKey = licenseKey;
@@ -1453,7 +1461,7 @@ app.post('/api/payment/confirm', async (req, res) => {
     
     // 生成授權碼
     const crypto = require('crypto');
-    const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    const licenseKey = generateLicenseKey();
     
     // 更新訂單狀態
     order.status = 'paid';
@@ -1505,7 +1513,7 @@ app.post('/api/admin/create-license', async (req, res) => {
     }
     
     const crypto = require('crypto');
-    const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+    const licenseKey = generateLicenseKey();
     const serverTime = new Date().toISOString();
     
     await setLicense(licenseKey, {
@@ -1591,9 +1599,8 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260127-121727/ios-location-simulator-mac.dmg?download=1',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-230238/ios-location-simulator-mac.dmg?download=1',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260122-164839/ios-location-simulator-mac.dmg?download=1'
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip?download=1'
                 ];
                 
                 let fallbackIndex = 0;
@@ -1884,7 +1891,7 @@ if (ENABLE_ADMIN_CONSOLE) {
             }
             
             const crypto = require('crypto');
-            const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase();
+            const licenseKey = generateLicenseKey();
             const now = new Date().toISOString();
             
             const licenseData = {
@@ -2203,7 +2210,7 @@ if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEBUG_ENDPOINTS 
             if (planType && planType !== 'annual' && planType !== 'lifetime') {
                 return res.status(400).json({ error: '無效的 planType', code: 'BAD_REQUEST' });
             }
-            const licenseKey = 'PKM-' + crypto.randomBytes(8).toString('hex').toUpperCase(); // 16 hex uppercase
+            const licenseKey = generateLicenseKey();
             const now = new Date().toISOString();
             await setLicense(licenseKey, {
                 licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
