@@ -1094,7 +1094,7 @@ app.post('/api/license/verify', async (req, res) => {
             valid: true,
             planType: license.planType || 'annual',
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip',
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260522-signfix/KongGoo-1.0.0-arm64-mac.zip',
                 macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip',
                 windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe'
             }
