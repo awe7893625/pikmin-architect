@@ -1111,6 +1111,159 @@ app.post('/api/license/verify', async (req, res) => {
     }
 });
 
+// 4.2 自助換機解綁
+// POST /api/license/rebind
+// body: { licenseKey, email? }
+//
+// 設計說明：
+//   - 知道完整 licenseKey 本身即為身份證明（對應 Netflix / JetBrains 等 SaaS 慣例）
+//   - email 為可選欄位：若 license record 已存有 purchaseEmail，則強制比對；
+//     若 record 無此欄位（歷史授權），則跳過 email 比對，僅以 licenseKey 身份驗證
+//   - 防濫用：每個 licenseKey 每 30 天最多 3 次解綁（rebindCount + rebindWindowStart 存進 KV）
+//   - 解綁後 deviceId / boundDeviceId 清空，讓新裝置可重新 activate
+//   - activate 失敗碼維持 LICENSE_USED（前端據此引導解綁流程，不在此變動）
+app.post('/api/license/rebind', async (req, res) => {
+    const rawInput = req.body || {};
+    // ATTACK-1/2 fix: normalize early so substring() is safe and all comparisons/writes use the same value
+    const licenseKey = rawInput.licenseKey != null ? String(rawInput.licenseKey).trim() : '';
+    const email = rawInput.email != null ? String(rawInput.email).trim().toLowerCase() : '';
+
+    if (!licenseKey) {
+        return res.status(400).json({ error: 'licenseKey 是必需的', code: 'BAD_REQUEST' });
+    }
+
+    const serverTime = new Date().toISOString();
+    console.log('[Rebind] 收到解綁請求:', licenseKey.substring(0, 8) + '...', '時間:', serverTime);
+
+    try {
+        requireKV();
+
+        // --- 1. 讀取 license（使用已 trim 的 licenseKey）---
+        const license = await getLicenseFromKV(licenseKey);
+        if (!license) {
+            return res.status(404).json({ error: '授權碼不存在', code: 'LICENSE_NOT_FOUND' });
+        }
+        if (!license.isValid) {
+            return res.status(403).json({ error: '授權碼已失效', code: 'LICENSE_INVALID' });
+        }
+
+        // --- 2. 頻率限制計數初始化（ATTACK-12 fix：防 NaN / corrupt KV data）---
+        const REBIND_WINDOW_DAYS = 30;
+        const REBIND_MAX_COUNT = 3;
+        const windowMs = REBIND_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        let rebindCount = Number.isFinite(Number(license.rebindCount)) ? Math.max(0, Math.floor(Number(license.rebindCount))) : 0;
+        const parsedWindowMs = license.rebindWindowStart ? new Date(license.rebindWindowStart).getTime() : NaN;
+        let rebindWindowStart = Number.isFinite(parsedWindowMs) ? parsedWindowMs : now;
+
+        // 若超過 window，重置計數器
+        if (now - rebindWindowStart > windowMs) {
+            rebindCount = 0;
+            rebindWindowStart = now;
+        }
+
+        if (rebindCount >= REBIND_MAX_COUNT) {
+            const resetAt = new Date(rebindWindowStart + windowMs).toISOString();
+            console.warn('[Rebind] 頻率限制觸發:', licenseKey.substring(0, 8) + '...', '本週期已嘗試', rebindCount, '次');
+            return res.status(429).json({
+                error: `此授權碼在 ${REBIND_WINDOW_DAYS} 天內已達解綁上限（${REBIND_MAX_COUNT} 次）。請聯繫客服。`,
+                code: 'REBIND_RATE_LIMIT',
+                resetAt: resetAt
+            });
+        }
+
+        // --- 3. Email 驗證（僅當 license record 已有 purchaseEmail 時才強制比對）---
+        // ATTACK-5 fix: failed email attempts also consume rebindCount to prevent brute force
+        if (license.purchaseEmail) {
+            const normalizedRecord = String(license.purchaseEmail).trim().toLowerCase();
+            if (!email) {
+                // Count this attempt against quota to deter probing
+                const attemptLicense = { ...license, rebindCount: rebindCount + 1, rebindWindowStart: new Date(rebindWindowStart).toISOString(), updatedAt: serverTime };
+                await setLicense(licenseKey, attemptLicense);
+                licensesCache.delete(licenseKey);
+                return res.status(400).json({ error: '此授權碼需要提供購買 email 才能解綁', code: 'EMAIL_REQUIRED' });
+            }
+            if (email !== normalizedRecord) {
+                // Count mismatch against quota (ATTACK-5 brute force prevention)
+                const attemptLicense = { ...license, rebindCount: rebindCount + 1, rebindWindowStart: new Date(rebindWindowStart).toISOString(), updatedAt: serverTime };
+                await setLicense(licenseKey, attemptLicense);
+                licensesCache.delete(licenseKey);
+                console.warn('[Rebind] email 不符（嘗試計數+1）:', licenseKey.substring(0, 8) + '...');
+                return res.status(403).json({ error: 'Email 與購買記錄不符，無法自助解綁。請聯繫客服。', code: 'EMAIL_MISMATCH' });
+            }
+        }
+
+        // --- 4. ATTACK-10 fix: idempotent guard — already unbound, no quota consumed ---
+        const oldDeviceId = license.deviceId || license.boundDeviceId || null;
+        if (!oldDeviceId) {
+            console.log('[Rebind] 授權碼已是未綁定狀態（idempotent，不計次數）:', licenseKey.substring(0, 8) + '...');
+            return res.json({
+                success: true,
+                message: '授權碼已是未綁定狀態，可直接在新裝置上激活',
+                rebindCount: rebindCount,
+                rebindRemaining: REBIND_MAX_COUNT - rebindCount
+            });
+        }
+
+        // --- 5. 清除舊裝置綁定 ---
+        try {
+            const oldDevice = await getDeviceFromKV(oldDeviceId);
+            // Compare against normalized licenseKey (ATTACK-2 fix: raw input was trimmed at top)
+            if (oldDevice && oldDevice.licenseKey === licenseKey) {
+                await setDevice(oldDeviceId, {
+                    ...oldDevice,
+                    licenseKey: null,
+                    activatedAt: null,
+                    updatedAt: serverTime
+                });
+                devicesCache.delete(oldDeviceId);
+                console.log('[Rebind] 舊裝置已解除綁定:', oldDeviceId.substring(0, 6) + '...');
+            }
+        } catch (deviceError) {
+            // 非致命：舊裝置下次 auth/check 會自動發現授權碼已清除
+            console.error('[Rebind] 清除舊裝置失敗（非致命）:', deviceError.message);
+        }
+
+        // --- 6. 更新 license record（清除 deviceId，更新解綁計數）---
+        const updatedLicense = {
+            ...license,
+            deviceId: null,
+            boundDeviceId: null,
+            activatedAt: null,        // 允許新裝置重新 activate
+            rebindCount: rebindCount + 1,
+            rebindWindowStart: new Date(rebindWindowStart).toISOString(),
+            lastRebindAt: serverTime,
+            updatedAt: serverTime,
+            // 若本次附帶 email 且 record 原本無 purchaseEmail，補存（供未來驗證）
+            ...(email && !license.purchaseEmail ? { purchaseEmail: email } : {})
+        };
+        await setLicense(licenseKey, updatedLicense);
+        // 清除 license cache，確保後續 activate 從 KV 讀最新狀態
+        licensesCache.delete(licenseKey);
+
+        console.log('[Rebind] 解綁成功:', licenseKey.substring(0, 8) + '...', '本週期解綁次數:', rebindCount + 1, '/', REBIND_MAX_COUNT);
+
+        return res.json({
+            success: true,
+            message: '授權碼已解綁，請在新裝置上重新激活',
+            rebindCount: rebindCount + 1,
+            rebindRemaining: REBIND_MAX_COUNT - (rebindCount + 1)
+        });
+
+    } catch (error) {
+        console.error('[Rebind] 錯誤:', error);
+        if (error.message.includes('授權系統不可用') || error.message.includes('KV')) {
+            return res.status(503).json({
+                error: '授權系統暫時不可用',
+                message: error.message,
+                code: 'KV_UNAVAILABLE'
+            });
+        }
+        return res.status(500).json({ error: '服務器錯誤', message: error.message, code: 'REBIND_FAILED' });
+    }
+});
+
 // ========== ECPay 綠界金流工具 ==========
 const ECPAY_MERCHANT_ID = process.env.ECPAY_MERCHANT_ID || '3487294';
 const ECPAY_HASH_KEY = process.env.ECPAY_HASH_KEY || 'GqnzRPCvsBTCB57O';
@@ -2085,6 +2238,88 @@ if (ENABLE_ADMIN_CONSOLE) {
             res.json({ success: true });
         } catch (error) {
             console.error('❌ [Admin] 直接授權裝置失敗:', error);
+            if (error.message.includes('授權系統不可用') || error.message.includes('KV')) {
+                return res.status(503).json({
+                    error: '授權系統暫時不可用',
+                    message: error.message,
+                    code: 'KV_UNAVAILABLE'
+                });
+            }
+            return res.status(500).json({
+                error: '操作失敗',
+                message: error.message,
+                code: 'ADMIN_OP_FAILED'
+            });
+        }
+    });
+
+    // E) POST /api/admin/unbind - 管理員手動解綁（客服專用）
+    // 受 requireAdminOr404 三道門保護（ENABLE_ADMIN_CONSOLE + x-admin-key header）
+    // body: { licenseKey }
+    // 與自助 rebind 不同：不受頻率限制、不需要 email，直接解綁
+    app.post('/api/admin/unbind', async (req, res) => {
+        const denied = requireAdminOr404(req, res);
+        if (denied) return;
+
+        const serverTime = new Date().toISOString();
+
+        try {
+            requireKV();
+
+            const { licenseKey } = req.body || {};
+            if (!licenseKey) {
+                return res.status(400).json({ error: 'licenseKey 是必需的', code: 'BAD_REQUEST' });
+            }
+
+            // 讀取 license
+            const license = await getLicenseFromKV(String(licenseKey).trim());
+            if (!license) {
+                return res.status(404).json({ error: '授權碼不存在', code: 'LICENSE_NOT_FOUND' });
+            }
+
+            const oldDeviceId = license.deviceId || license.boundDeviceId || null;
+
+            // 清除舊裝置綁定
+            if (oldDeviceId) {
+                try {
+                    const oldDevice = await getDeviceFromKV(oldDeviceId);
+                    if (oldDevice && oldDevice.licenseKey === licenseKey) {
+                        await setDevice(oldDeviceId, {
+                            ...oldDevice,
+                            licenseKey: null,
+                            activatedAt: null,
+                            updatedAt: serverTime
+                        });
+                        devicesCache.delete(oldDeviceId);
+                    }
+                } catch (deviceError) {
+                    console.error('[Admin/Unbind] 清除舊裝置失敗（非致命）:', deviceError.message);
+                }
+            }
+
+            // 更新 license record（管理員解綁，記錄 adminUnbindAt 但不增加 rebindCount）
+            const updatedLicense = {
+                ...license,
+                deviceId: null,
+                boundDeviceId: null,
+                activatedAt: null,
+                adminUnbindAt: serverTime,
+                adminUnbindCount: (license.adminUnbindCount || 0) + 1,
+                updatedAt: serverTime
+            };
+            await setLicense(licenseKey, updatedLicense);
+            licensesCache.delete(licenseKey);
+
+            console.log('[Admin/Unbind] 管理員解綁成功:', licenseKey.substring(0, 8) + '...', '舊裝置:', oldDeviceId ? oldDeviceId.substring(0, 6) + '...' : 'none');
+
+            return res.json({
+                success: true,
+                message: '已解除裝置綁定，授權碼可在新裝置上重新激活',
+                unbound: oldDeviceId ? oldDeviceId.substring(0, 6) + '...' : null
+            });
+
+        } catch (error) {
+            console.error('[Admin/Unbind] 錯誤:', error);
             if (error.message.includes('授權系統不可用') || error.message.includes('KV')) {
                 return res.status(503).json({
                     error: '授權系統暫時不可用',
