@@ -1094,7 +1094,7 @@ app.post('/api/license/verify', async (req, res) => {
             valid: true,
             planType: license.planType || 'annual',
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260522-signfix/KongGoo-1.0.0-arm64-mac.zip',
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260523-connectfix/KongGoo-1.0.0-arm64-mac.zip',
                 macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip',
                 windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe'
             }
@@ -1721,7 +1721,7 @@ app.get('/downloads/:file', (req, res) => {
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
         const rawUrl =
             process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip';
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260523-connectfix/KongGoo-1.0.0-arm64-mac.zip';
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
@@ -1752,7 +1752,7 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-arm64-mac.zip?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260523-connectfix/KongGoo-1.0.0-arm64-mac.zip?download=1',
                     'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip?download=1'
                 ];
                 
