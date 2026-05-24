@@ -1094,7 +1094,7 @@ app.post('/api/license/verify', async (req, res) => {
             valid: true,
             planType: license.planType || 'annual',
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260525-tunneld-portflag/KongGoo-1.0.0-arm64.dmg',
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg',
                 macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip',
                 windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe'
             }
@@ -1333,7 +1333,9 @@ app.post('/api/payment/create', async (req, res) => {
     // 路由：非繁中 → Polar 國際金流
     if (usePolar) {
         try {
-            const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
+            // origin only — strip any accidental path (Codex review fix: prevent
+            // SUCCESS_URL=https://konggoo.uk/payment/success doubling the path).
+            const baseUrl = new URL(process.env.SUCCESS_URL || 'https://konggoo.uk').origin;
             const polarRes = await fetch('https://api.polar.sh/v1/checkouts/', {
                 method: 'POST',
                 headers: {
@@ -1389,7 +1391,9 @@ app.get('/payment/ecpay-checkout', async (req, res) => {
         return res.redirect(`/payment/success?licenseKey=${order.licenseKey}&planType=${order.planType}`);
     }
 
-    const baseUrl = process.env.SUCCESS_URL || 'https://konggoo.uk';
+    // origin only — strip any accidental path (Codex review fix: prevent
+    // SUCCESS_URL=https://konggoo.uk/payment/success doubling the path).
+    const baseUrl = new URL(process.env.SUCCESS_URL || 'https://konggoo.uk').origin;
     const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
     const now = new Date();
     const pad = n => String(n).padStart(2, '0');
@@ -1721,7 +1725,7 @@ app.get('/downloads/:file', (req, res) => {
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
         const rawUrl =
             process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260525-tunneld-portflag/KongGoo-1.0.0-arm64.dmg';
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg';
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
@@ -1752,7 +1756,7 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260525-tunneld-portflag/KongGoo-1.0.0-arm64.dmg?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg?download=1',
                     'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip?download=1'
                 ];
                 
