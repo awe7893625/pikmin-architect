@@ -43,18 +43,50 @@
       <ol class="muted">
         <li>打開 App → 進入「授權」頁面</li>
         <li>輸入授權碼 → 點「激活授權碼」</li>
-        <li>激活成功後，即可永久使用（或依方案）</li>
+        <li>激活成功後即可使用：買斷方案永久有效，年費方案自激活日起算一年</li>
       </ol>
       <p class="muted">注意：激活是綁定設備的（防止授權被濫用）。</p>
     </div>
 
     <div class="card">
-      <h2>3) 付款後在哪裡拿到授權碼？</h2>
-      <p class="muted">付款成功後會在成功頁面顯示授權碼：<a href="/payment/success">/payment/success</a>（系統會帶參數顯示你的授權碼）。</p>
+      <h2>3) 沒收到授權碼？重新寄一次</h2>
+      <p class="muted">付款成功後，授權碼會顯示在成功頁面，同時寄到你購買時填的 Email。<br>
+        如果信不見了、或當時不小心關掉頁面，在這裡輸入購買時的 Email 就會重寄一份。</p>
+      <div class="row">
+        <input id="resendEmail" type="email" placeholder="購買時填的 Email" autocomplete="email" />
+        <button onclick="resendLicense()">重新寄送授權碼</button>
+      </div>
+      <p id="resendResult" class="muted" style="margin-top:10px;"></p>
+      <p class="muted" style="margin-top:10px;">找不到、或 Email 填錯了？來信 <a href="mailto:awe7893625@gmail.com">awe7893625@gmail.com</a>，附上付款時間與金額即可。</p>
     </div>
   </div>
 
   <script>
+    async function resendLicense() {
+      const email = document.getElementById('resendEmail').value.trim();
+      const out = document.getElementById('resendResult');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+        out.innerHTML = '<span class="bad">請輸入有效的 Email</span>';
+        return;
+      }
+      out.textContent = '處理中...';
+      try {
+        const res = await fetch('/api/license/resend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (res.status === 429) {
+          out.innerHTML = '<span class="bad">補寄太頻繁了，請稍後再試。</span>';
+          return;
+        }
+        out.textContent = data.message || '如果這個 Email 有購買紀錄，授權碼已重新寄出。';
+      } catch (e) {
+        out.innerHTML = '<span class="bad">連線失敗，請稍後再試。</span>';
+      }
+    }
+
     async function verify() {
       const licenseKey = document.getElementById('licenseKey').value.trim();
       const result = document.getElementById('result');

@@ -154,7 +154,7 @@
             <h2 style="font-size:18px; margin-bottom:10px;" data-i18n="paymentReadBeforeBuy">購買前請先閱讀（重要）</h2>
             <div style="margin-bottom:14px;">
                 <strong data-i18n="bindingRuleTitle">授權綁定規則</strong><br>
-                <span data-i18n="bindingRuleBody">授權碼為一次性使用，啟用後將綁定單一設備（deviceId）。目前政策：換機 / 重灌不提供自動轉移，如需協助請聯絡客服處理重置（TODO: 填客服信箱）。</span>
+                <span data-i18n="bindingRuleBody">授權碼為一次性使用，啟用後將綁定單一設備（deviceId）。換機 / 重灌可在 App 的啟用視窗用購買時的 Email 自助解綁；如需人工協助請來信 awe7893625@gmail.com。</span>
             </div>
             <div style="margin-bottom:14px;">
                 <strong data-i18n="failClosedTitle">離線/伺服器不可用行為（Fail Closed）</strong><br>
@@ -178,7 +178,7 @@
                 <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_USED</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_USED_msg">授權碼已被其他設備使用</td></tr>
                 <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_INVALID</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_INVALID_msg">授權碼失效</td></tr>
             </table>
-            <div style="color:#999; font-size:12px; margin-top:8px;">English FAQ: TODO</div>
+            <div style="color:#999; font-size:12px; margin-top:8px;" data-i18n="paymentAfterPurchaseHelp">付款後授權碼會顯示在成功頁面並寄到你填的 Email。沒收到？到 <a href="/license" style="color:#667eea;">授權與下載</a> 頁面可以重寄。</div>
         </div>
     </div>
 
@@ -252,7 +252,8 @@
                     },
                     body: JSON.stringify({
                         planType: selectedPlan,
-                        email: email
+                        email: email,
+                        lang: currentLang
                     })
                 });
                 

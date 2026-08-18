@@ -1033,23 +1033,10 @@ function closePaymentModal() {
 }
 
 function redirectToPayment(planType) {
-    fetch('/api/payment/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planType, lang: currentLang })
-    })
-    .then(res => {
-        if (!res.ok) return res.json().then(err => Promise.reject(err));
-        return res.json();
-    })
-    .then(data => {
-        if (data.paymentUrl) window.location.href = data.paymentUrl;
-        else if (data.checkoutUrl) window.location.href = data.checkoutUrl;
-        else window.location.href = '/payment?planType=' + planType;
-    })
-    .catch(() => {
-        alert(siteTranslations.js_payment_fail || '付款建立失敗，請稍後再試');
-    });
+    // 建單前必須先收 Email（授權碼要寄得出去），統一交給 /payment 頁面收，
+    // 不在這裡直接打 /api/payment/create，避免兩處流程各自漂移。
+    window.location.href = '/payment?planType=' + encodeURIComponent(planType)
+        + '&lang=' + encodeURIComponent(currentLang);
 }
 
 /* ===== Download ===== */
