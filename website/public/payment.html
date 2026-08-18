@@ -177,15 +177,16 @@
                 <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_NOT_FOUND</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_NOT_FOUND_msg">授權碼不存在</td></tr>
                 <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_USED</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_USED_msg">授權碼已被其他設備使用</td></tr>
                 <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_INVALID</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_INVALID_msg">授權碼失效</td></tr>
+                <tr><td style="padding:8px; border-bottom:1px solid #f2f2f2;">LICENSE_EXPIRED</td><td style="padding:8px; border-bottom:1px solid #f2f2f2;" data-i18n="LICENSE_EXPIRED_msg">年費方案已到期，請重新購買</td></tr>
             </table>
-            <div style="color:#999; font-size:12px; margin-top:8px;" data-i18n="paymentAfterPurchaseHelp">付款後授權碼會顯示在成功頁面並寄到你填的 Email。沒收到？到 <a href="/license" style="color:#667eea;">授權與下載</a> 頁面可以重寄。</div>
+            <div style="color:#999; font-size:12px; margin-top:8px;" data-i18n-html="paymentAfterPurchaseHelp">付款後授權碼會顯示在成功頁面並寄到你填的 Email。沒收到？到 <a href="/license" style="color:#667eea;">授權與下載</a> 頁面可以重寄。</div>
         </div>
     </div>
 
     <script>
         // i18n（由 App 透過 ?lang= 傳入；否則預設 zh-TW）
         const params = new URLSearchParams(window.location.search);
-        const currentLang = params.get('lang') || 'zh-TW';
+        const currentLang = params.get('lang') || localStorage.getItem('siteLang') || 'zh-TW';
         let translations = {};
 
         async function loadLanguage(lang) {
@@ -202,6 +203,11 @@
             document.querySelectorAll('[data-i18n]').forEach(el => {
                 const k = el.getAttribute('data-i18n');
                 if (k && translations[k]) el.textContent = translations[k];
+            });
+            // 含連結的文案走 innerHTML（textContent 會把 <a> 吃掉）
+            document.querySelectorAll('[data-i18n-html]').forEach(el => {
+                const k = el.getAttribute('data-i18n-html');
+                if (k && translations[k]) el.innerHTML = translations[k];
             });
             const title = translations.paymentPageTitle || translations.paymentTitle;
             if (title) document.title = `${title} - ${translations.appName || 'KongGoo'}`;

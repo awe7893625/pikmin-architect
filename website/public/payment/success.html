@@ -128,7 +128,8 @@
             <ol style="color:#333;">
                 <li data-i18n="noteBinding">一次性綁定：授權碼啟用後會綁定單一設備（deviceId）。</li>
                 <li data-i18n="noteFailClosed">Fail Closed：授權系統暫不可用時會顯示錯誤碼並鎖住需要授權功能。</li>
-                <li data-i18n="noteReinstall">換機/重灌：目前不提供自動轉移（TODO）。</li>
+                <li data-i18n="noteReinstall">換機/重灌：可在 App 的啟用視窗用購買時的 Email 自助解綁後重新啟用。</li>
+                <li data-i18n="noteEmailed">這組授權碼已寄到你購買時填的 Email；沒收到可到「授權與下載」頁面重寄。</li>
             </ol>
         </div>
         
@@ -139,7 +140,8 @@
         const urlParams = new URLSearchParams(window.location.search);
         const licenseKey = urlParams.get('licenseKey');
         const orderId = urlParams.get('orderId');
-        const currentLang = urlParams.get('lang') || 'zh-TW';
+        // ECPay 導回時不會帶 lang，退回首頁存的語系，否則英日韓買家會看到中文
+        const currentLang = urlParams.get('lang') || localStorage.getItem('siteLang') || 'zh-TW';
         let translations = {};
 
         async function loadLanguage(lang) {
