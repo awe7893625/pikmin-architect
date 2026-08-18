@@ -150,7 +150,7 @@
   "pay_lifetime_period": "Permanent License",
   "pay_goto": "Proceed to Payment",
   "pay_note": "Credit card payment supported",
-  "pay_note2": "License key shown after payment",
+  "pay_note2": "Your license key is shown after payment and emailed to you",
   "js_payment_fail": "Payment creation failed, please try again later",
   "js_verify_invalid": "Invalid license key",
   "js_verify_fail": "Verification failed, please try again later",

@@ -149,7 +149,7 @@
   "pay_lifetime_period": "영구 라이선스",
   "pay_goto": "결제 진행",
   "pay_note": "신용카드 · Apple Pay 결제 지원",
-  "pay_note2": "결제 후 라이선스 키 자동 표시",
+  "pay_note2": "결제 후 라이선스 키가 표시되며 이메일로도 발송됩니다",
   "js_payment_fail": "결제 생성 실패, 나중에 다시 시도하세요",
   "js_verify_invalid": "유효하지 않은 라이선스 키",
   "js_verify_fail": "인증 실패, 나중에 다시 시도하세요",

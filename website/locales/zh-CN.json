@@ -78,5 +78,6 @@
   "noteEmailed": "这组授权码已寄到你购买时填的 Email；没收到可到「授权与下载」页面重寄。",
   "loading": "加载中...",
   "successWaitingLicense": "正在确认付款并生成授权码...",
-  "successLicenseDelayed": "已收到付款完成，但授权码仍在生成中，请稍后刷新此页面。"
+  "successLicenseDelayed": "已收到付款完成，但授权码仍在生成中，请稍后刷新此页面。",
+  "pay_note2": "完成后会显示授权码，并寄到你填的 Email"
 }

@@ -112,12 +112,19 @@
           return;
         }
 
+        if (data && data.code === 'LICENSE_EXPIRED') {
+          const until = data.expiresAt ? String(data.expiresAt).slice(0, 10) : '';
+          result.innerHTML = `<span class="bad">這組授權已到期${until ? '（' + until + '）' : ''}，請重新購買年費方案。</span>`;
+          return;
+        }
+
         if (!data || !data.valid) {
           result.innerHTML = '<span class="bad">授權碼無效，請確認後再試</span>';
           return;
         }
 
-        result.innerHTML = `<span class="ok">授權碼有效</span>（方案：<code>${data.planType || 'unknown'}</code>）`;
+        const until = data.expiresAt ? `，有效至 ${String(data.expiresAt).slice(0, 10)}` : '（永久授權）';
+        result.innerHTML = `<span class="ok">授權碼有效</span>（方案：<code>${data.planType || 'unknown'}</code>${until}）`;
         document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg';
         document.getElementById('winLink').href = data.download?.windows || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe';
         dl.style.display = 'block';

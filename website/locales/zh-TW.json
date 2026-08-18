@@ -150,7 +150,7 @@
   "pay_lifetime_period": "永久授權",
   "pay_goto": "前往付款",
   "pay_note": "支援信用卡付款",
-  "pay_note2": "完成後自動顯示授權碼",
+  "pay_note2": "完成後會顯示授權碼，並寄到你填的 Email",
   "js_payment_fail": "付款建立失敗，請稍後再試",
   "js_verify_invalid": "授權碼無效",
   "js_verify_fail": "驗證失敗，請稍後再試",
