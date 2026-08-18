@@ -96,6 +96,26 @@
             margin-top: 10px;
             text-align: center;
         }
+        .email-field {
+            margin-top: 10px;
+        }
+        .email-field label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .email-field input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+        .email-field input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -106,7 +126,7 @@
             <span class="recommended" data-i18n="recommended">推薦</span>
             <div class="plan-title" data-i18n="annualPlan">年費方案</div>
             <div class="plan-price">NT$ 690</div>
-            <div class="plan-desc" data-i18n="oneYearLicense">一年授權，無限使用</div>
+            <div class="plan-desc" data-i18n="oneYearLicense">一年授權，無限使用（自啟用日起算一年，到期後需重新購買）</div>
         </div>
         
         <div class="plan-card" data-plan="lifetime" onclick="selectPlan('lifetime')">
@@ -115,6 +135,11 @@
             <div class="plan-desc" data-i18n="permanentLicense">永久授權，終身使用</div>
         </div>
         
+        <div class="email-field">
+            <label for="email" data-i18n="emailLabel">Email（授權碼會寄到這個信箱）</label>
+            <input id="email" type="email" required autocomplete="email" placeholder="you@example.com">
+        </div>
+
         <button class="payment-btn" id="payBtn" onclick="processPayment()" disabled data-i18n="paySelectPlan">選擇方案後付款</button>
         
         <div class="loading" id="loading">
@@ -207,7 +232,13 @@
                 document.getElementById('error').textContent = translations.paymentSelectPlanFirst || '請選擇一個方案';
                 return;
             }
-            
+
+            const email = (document.getElementById('email').value || '').trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+                document.getElementById('error').textContent = translations.paymentEmailRequired || '請填寫有效的 Email，授權碼會寄到這個信箱';
+                return;
+            }
+
             document.getElementById('loading').style.display = 'block';
             document.getElementById('error').textContent = '';
             document.getElementById('payBtn').disabled = true;
@@ -220,7 +251,8 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        planType: selectedPlan
+                        planType: selectedPlan,
+                        email: email
                     })
                 });
                 

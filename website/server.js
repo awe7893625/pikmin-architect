@@ -3,6 +3,15 @@ const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
 const { execSync } = require('child_process');
+const {
+    planDurationDays,
+    computeExpiresAt,
+    isLicenseExpired,
+    normalizeEmail,
+    isValidEmail,
+    maskEmail
+} = require('./lib/license-policy');
+const { sendLicenseEmail } = require('./lib/mailer');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -529,6 +538,15 @@ async function setOrder(orderId, orderData) {
 
 // ========== 持久化存儲層結束 ==========
 
+// 付款成功 → 發 key → 寄授權信：三個金流回調共用同一條路徑，避免各自漂移
+const { createOrderFlow } = require('./lib/order-flow');
+const orderFlow = createOrderFlow({
+    getKV: () => kv,
+    generateLicenseKey,
+    setOrder,
+    setLicense
+});
+
 // 管理員密鑰（從環境變數讀取）
 const ADMIN_KEY = process.env.ADMIN_KEY || 'default-admin-key-change-in-production';
 
@@ -662,23 +680,12 @@ app.post('/payment/success', async (req, res) => {
         // 若 notify 較慢，這裡也嘗試處理
         if (String(body.RtnCode) === '1' && orderId) {
             const order = await getOrderFromKV(orderId);
-            if (order && order.status !== 'paid') {
-                const crypto = require('crypto');
-                const licenseKey = generateLicenseKey();
-                order.status = 'paid';
-                order.licenseKey = licenseKey;
-                order.paidAt = new Date().toISOString();
-                order.ecpayTradeNo = body.TradeNo || '';
-                await setOrder(orderId, order);
-                await setLicense(licenseKey, {
-                    licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
-                    deviceId: null, boundDeviceId: null,
-                    paidAt: order.paidAt, isValid: true,
-                    createdAt: order.createdAt, activatedAt: null,
-                    planType: order.planType, issuedBy: 'payment',
-                    note: `ECPay TradeNo: ${body.TradeNo || ''}`
+            if (order) {
+                // 與 notify 走同一條冪等路徑：誰先到誰發 key，另一個不會重發
+                await orderFlow.finalizePaidOrder(orderId, order, {
+                    tradeNo: body.TradeNo || '',
+                    gateway: 'ecpay'
                 });
-                console.log('✅ ECPay OrderResultURL 付款處理完成:', licenseKey);
             }
         }
 
@@ -983,7 +990,17 @@ app.post('/api/license/activate', async (req, res) => {
             console.log('❌ [激活] 授權碼已失效:', licenseKey);
             return res.status(403).json({ error: '授權碼已失效', code: 'LICENSE_INVALID' });
         }
-        
+
+        // 年繳到期檢查（無 expiresAt 的舊授權 = 永久，不受影響）
+        if (isLicenseExpired(license)) {
+            console.log('❌ [激活] 授權已到期:', licenseKey, license.expiresAt);
+            return res.status(403).json({
+                error: '授權已到期，請重新購買',
+                code: 'LICENSE_EXPIRED',
+                expiresAt: license.expiresAt
+            });
+        }
+
         // 檢查授權碼是否已被其他設備使用（每個激活碼只能使用一次）
         if (license.deviceId && license.deviceId !== deviceId) {
             console.log('❌ [激活] 授權碼已被其他設備使用:', { 
@@ -1005,7 +1022,10 @@ app.post('/api/license/activate', async (req, res) => {
                 licenseKey: licenseKey,
                 isActivated: true,
                 trialExpiresAt: device?.trialExpiresAt || null,
-                activatedAt: device?.activatedAt || license.activatedAt
+                activatedAt: device?.activatedAt || license.activatedAt,
+                // 重複啟用不展延效期，沿用原本算好的到期日
+                expiresAt: license.expiresAt || null,
+                planType: license.planType || 'annual'
             });
         }
         
@@ -1038,6 +1058,8 @@ app.post('/api/license/activate', async (req, res) => {
         license.deviceId = deviceId;
         license.boundDeviceId = deviceId; // 統一使用 boundDeviceId
         license.activatedAt = serverTime;
+        // 年繳效期從「啟用當下」起算；沒有 durationDays 的舊授權維持永久（grandfather）
+        license.expiresAt = computeExpiresAt(license, serverTime);
         await setLicense(licenseKey, license);
         console.log('✅ [激活] 授權碼記錄已保存到持久化存儲');
         
@@ -1054,11 +1076,13 @@ app.post('/api/license/activate', async (req, res) => {
         
         res.json({
             success: true,
-            message: '授權碼激活成功，設備已永久激活',
+            message: license.expiresAt ? '授權碼激活成功' : '授權碼激活成功，設備已永久激活',
             licenseKey: licenseKey,
             isActivated: true,
             trialExpiresAt: device.trialExpiresAt || null,
-            activatedAt: device.activatedAt
+            activatedAt: device.activatedAt,
+            expiresAt: license.expiresAt || null,
+            planType: license.planType || 'annual'
         });
     } catch (error) {
         console.error('❌ [激活] 錯誤:', error);
@@ -1090,9 +1114,18 @@ app.post('/api/license/verify', async (req, res) => {
         if (!license || !license.isValid) {
             return res.json({ valid: false });
         }
+        if (isLicenseExpired(license)) {
+            return res.json({
+                valid: false,
+                code: 'LICENSE_EXPIRED',
+                planType: license.planType || 'annual',
+                expiresAt: license.expiresAt
+            });
+        }
         return res.json({
             valid: true,
             planType: license.planType || 'annual',
+            expiresAt: license.expiresAt || null,
             download: {
                 mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg',
                 macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-mac.zip',
@@ -1108,6 +1141,79 @@ app.post('/api/license/verify', async (req, res) => {
             });
         }
         return res.status(500).json({ error: '服務器錯誤', message: error.message, code: 'VERIFY_FAILED' });
+    }
+});
+
+// 4.1.1 App 定期覆核（唯讀）：授權仍有效？裝置仍是綁定那台？還沒到期？
+app.post('/api/license/status', async (req, res) => {
+    const { licenseKey, deviceId } = req.body || {};
+    if (!licenseKey || !deviceId) {
+        return res.status(400).json({ valid: false, code: 'BAD_REQUEST', error: 'licenseKey 與 deviceId 皆為必填' });
+    }
+    try {
+        requireKV();
+        const license = await getLicenseFromKV(String(licenseKey).trim());
+        if (!license || !license.isValid) {
+            return res.json({ valid: false, code: 'LICENSE_INVALID' });
+        }
+        const bound = license.boundDeviceId || license.deviceId || null;
+        if (bound && bound !== deviceId) {
+            return res.json({ valid: false, code: 'LICENSE_USED' });
+        }
+        if (isLicenseExpired(license)) {
+            return res.json({ valid: false, code: 'LICENSE_EXPIRED', planType: license.planType || 'annual', expiresAt: license.expiresAt });
+        }
+        return res.json({ valid: true, planType: license.planType || 'annual', expiresAt: license.expiresAt || null, activatedAt: license.activatedAt || null });
+    } catch (error) {
+        console.error('❌ [Status] 覆核失敗:', error);
+        if (String(error.message || '').includes('KV') || String(error.message || '').includes('授權系統不可用')) {
+            return res.status(503).json({ valid: false, code: 'KV_UNAVAILABLE', error: '授權系統暫時不可用' });
+        }
+        return res.status(500).json({ valid: false, code: 'STATUS_FAILED', error: '服務器錯誤' });
+    }
+});
+
+// 4.1.2 授權碼補寄：客人關掉付款成功頁也拿得回授權碼
+app.post('/api/license/resend', async (req, res) => {
+    const { email } = req.body || {};
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ success: false, code: 'INVALID_EMAIL', error: '請填寫有效的 Email' });
+    }
+    const normalized = normalizeEmail(email);
+    // 一律回一般性成功訊息，避免被拿來探測哪些 Email 買過
+    const genericOk = { success: true, message: '如果這個 Email 有購買紀錄，授權碼已重新寄出' };
+    try {
+        requireKV();
+        const allowed = await orderFlow.consumeResendQuota(normalized);
+        if (!allowed) {
+            return res.status(429).json({ success: false, code: 'RESEND_RATE_LIMIT', error: '補寄次數過於頻繁，請稍後再試' });
+        }
+        const keys = await orderFlow.getLicensesByEmail(normalized);
+        if (!keys.length) {
+            return res.json(genericOk);
+        }
+        let sentCount = 0;
+        for (const key of keys) {
+            const license = await getLicenseFromKV(key);
+            if (!license || !license.isValid) continue;
+            const result = await sendLicenseEmail({
+                to: normalized,
+                licenseKey: key,
+                planType: license.planType,
+                expiresAt: license.expiresAt || null,
+                isResend: true
+            });
+            if (result.sent) sentCount += 1;
+            else console.error('❌ [補寄] 寄送失敗:', maskEmail(normalized), result.error);
+        }
+        console.log('📧 [補寄]', maskEmail(normalized), sentCount + '/' + keys.length);
+        return res.json(genericOk);
+    } catch (error) {
+        console.error('❌ [補寄] 失敗:', error);
+        if (String(error.message || '').includes('KV') || String(error.message || '').includes('授權系統不可用')) {
+            return res.status(503).json({ success: false, code: 'KV_UNAVAILABLE', error: '授權系統暫時不可用' });
+        }
+        return res.status(500).json({ success: false, code: 'RESEND_FAILED', error: '服務器錯誤' });
     }
 });
 
@@ -1298,11 +1404,17 @@ function genEcpayCheckMacValue(params) {
 
 // 5. 創建付款訂單（自動路由：繁中→ECPay，韓文/英文→Polar）
 app.post('/api/payment/create', async (req, res) => {
-    const { planType, lang } = req.body;
+    const { planType, lang, email } = req.body;
 
     if (!planType || (planType !== 'annual' && planType !== 'lifetime')) {
         return res.status(400).json({ error: '無效的方案類型', code: 'BAD_REQUEST' });
     }
+
+    // 授權碼要寄得出去，email 是必填（2026-08 之前沒收，客人關掉成功頁就永久失聯）
+    if (!isValidEmail(email)) {
+        return res.status(400).json({ error: '請填寫有效的 Email，授權碼會寄到這個信箱', code: 'INVALID_EMAIL' });
+    }
+    const purchaseEmail = normalizeEmail(email);
 
     const prices = { annual: 690, lifetime: 1750 };
     const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
@@ -1317,6 +1429,9 @@ app.post('/api/payment/create', async (req, res) => {
         status: 'pending',
         licenseKey: null,
         gateway: usePolar ? 'polar' : 'ecpay',
+        email: purchaseEmail,
+        emailSentAt: null,
+        emailError: null,
         createdAt: new Date().toISOString(),
         paidAt: null
     };
@@ -1448,30 +1563,12 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
 
         if (String(rtnCode) === '1' && orderId) {
             const order = await getOrderFromKV(orderId);
-            if (order && order.status !== 'paid') {
-                const crypto = require('crypto');
-                const licenseKey = generateLicenseKey();
-
-                order.status = 'paid';
-                order.licenseKey = licenseKey;
-                order.paidAt = new Date().toISOString();
-                order.ecpayTradeNo = body.TradeNo || '';
-                await setOrder(orderId, order);
-
-                await setLicense(licenseKey, {
-                    licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
-                    deviceId: null,
-                    boundDeviceId: null,
-                    paidAt: order.paidAt,
-                    isValid: true,
-                    createdAt: order.createdAt,
-                    activatedAt: null,
-                    planType: order.planType,
-                    issuedBy: 'payment',
-                    note: `ECPay TradeNo: ${body.TradeNo || ''}`
+            if (order) {
+                // 冪等：重送 notify 不會重複發 key，也不會重複寄信
+                await orderFlow.finalizePaidOrder(orderId, order, {
+                    tradeNo: body.TradeNo || '',
+                    gateway: 'ecpay'
                 });
-
-                console.log('✅ ECPay 付款成功，授權碼:', licenseKey, '訂單:', orderId);
             }
         }
 
@@ -1491,33 +1588,8 @@ app.get('/api/payment/polar-confirm', async (req, res) => {
     try {
         const order = await getOrderFromKV(orderId);
         if (!order) return res.status(404).json({ error: 'Order not found' });
-        if (order.status === 'paid') {
-            return res.json({ success: true, licenseKey: order.licenseKey, planType: order.planType });
-        }
-
-        // Polar success_url 被訪問 = 付款完成，直接發授權碼
-        const crypto = require('crypto');
-        const licenseKey = generateLicenseKey();
-
-        order.status = 'paid';
-        order.licenseKey = licenseKey;
-        order.paidAt = new Date().toISOString();
-        await setOrder(orderId, order);
-
-        await setLicense(licenseKey, {
-            licenseKeyHash: crypto.createHash('sha256').update(licenseKey).digest('hex'),
-            deviceId: null,
-            boundDeviceId: null,
-            paidAt: order.paidAt,
-            isValid: true,
-            createdAt: order.createdAt,
-            activatedAt: null,
-            planType: order.planType,
-            issuedBy: 'payment',
-            note: 'Polar international checkout'
-        });
-
-        console.log('✅ Polar 付款成功，授權碼:', licenseKey, '訂單:', orderId);
+        // Polar success_url 被訪問 = 付款完成（已 paid 的話 finalize 只會補寄尚未寄出的信）
+        const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
         return res.json({ success: true, licenseKey, planType: order.planType });
     } catch (error) {
         console.error('❌ Polar confirm 錯誤:', error);
@@ -1983,6 +2055,10 @@ if (ENABLE_ADMIN_CONSOLE) {
                             activatedAt: licenseData.activatedAt || null,
                             boundDeviceIdShort: boundDeviceIdShort,
                             boundDeviceId: boundDeviceId, // 完整 ID 保留供 rebind 使用
+                            purchaseEmailMasked: licenseData.purchaseEmail ? maskEmail(licenseData.purchaseEmail) : null,
+                            purchaseEmail: licenseData.purchaseEmail || null,
+                            expiresAt: licenseData.expiresAt || null,
+                            expired: isLicenseExpired(licenseData),
                             status: (licenseData.activatedAt || boundDeviceId) ? 'used' : 'unused'
                         });
                     }
@@ -2059,6 +2135,9 @@ if (ENABLE_ADMIN_CONSOLE) {
                 note: note ? String(note).slice(0, 200) : null,
                 boundDeviceId: null,
                 activatedAt: null,
+                // annual 一樣有效期（啟用時起算）；要發永久請開 lifetime
+                durationDays: planDurationDays(planType),
+                expiresAt: null,
                 isValid: true
             };
             
@@ -2445,7 +2524,8 @@ if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEBUG_ENDPOINTS 
         try {
             requireKV();
             const crypto = require('crypto');
-            const { planType, note } = req.body || {};
+            // durationDays / expiresAt 可選：供驗收測試造出「年繳」「已到期」「舊永久」三種形狀
+            const { planType, note, durationDays, expiresAt } = req.body || {};
             if (planType && planType !== 'annual' && planType !== 'lifetime') {
                 return res.status(400).json({ error: '無效的 planType', code: 'BAD_REQUEST' });
             }
@@ -2460,6 +2540,8 @@ if (process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEBUG_ENDPOINTS 
                 createdAt: now,
                 activatedAt: null,
                 planType: planType || 'annual',
+                durationDays: typeof durationDays === 'number' ? durationDays : undefined,
+                expiresAt: expiresAt || null,
                 issuedBy: 'admin',
                 note: note ? String(note).slice(0, 200) : null
             });
