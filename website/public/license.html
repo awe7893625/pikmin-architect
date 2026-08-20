@@ -125,7 +125,7 @@
 
         const until = data.expiresAt ? `，有效至 ${String(data.expiresAt).slice(0, 10)}` : '（永久授權）';
         result.innerHTML = `<span class="ok">授權碼有效</span>（方案：<code>${data.planType || 'unknown'}</code>${until}）`;
-        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260526/KongGoo-1.0.0-arm64.dmg';
+        document.getElementById('macLink').href = data.download?.mac || 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0-mac-arm64/KongGoo-1.1.0-arm64.dmg';
         document.getElementById('winLink').href = data.download?.windows || 'https://github.com/awe7893625/pikmin-architect/releases/download/v20260428-fix1/KongGoo-1.0.0-win-x64.exe';
         dl.style.display = 'block';
       } catch (e) {
