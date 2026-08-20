@@ -1402,6 +1402,59 @@ function genEcpayCheckMacValue(params) {
     return crypto.createHash('sha256').update(encoded).digest('hex').toUpperCase();
 }
 
+// 跟綠界回頭對帳。
+//
+// ⚠️ 為什麼需要這個（2026-08-20）：HashKey/HashIV 曾隨 public repo 外洩七個月，
+// 拿到它們就能算出合法的 CheckMacValue，對 /api/payment/ecpay-notify 送一封
+// 假的「付款成功」→ 免費取得授權碼。光驗簽章已經擋不住了。
+// 但攻擊者偽造不出「綠界那邊真的有這筆已付款交易」，所以改成回頭查證。
+//
+// 實測綠界 QueryTradeInfo V5 行為：
+//   簽章正確 + 查無此筆 → HTTP 200，TradeStatus=10200047，TradeAmt=0
+//   簽章錯誤            → HTTP 500
+// 兩者分得開，所以「綠界說沒付款」和「查詢本身失敗」可以走不同分支。
+const ECPAY_QUERY_URL = process.env.ECPAY_QUERY_URL
+    || 'https://payment.ecpay.com.tw/Cashier/QueryTradeInfo/V5';
+
+// 測試環境若沒指定假的查詢端點，就跳過對帳（避免單元測試打到綠界正式 API）
+function shouldVerifyWithEcpay() {
+    if (process.env.ECPAY_QUERY_URL) return true;
+    return process.env.NODE_ENV !== 'test';
+}
+
+async function queryEcpayTrade(merchantTradeNo) {
+    const params = {
+        MerchantID: ECPAY_MERCHANT_ID,
+        MerchantTradeNo: merchantTradeNo,
+        TimeStamp: String(Math.floor(Date.now() / 1000)),
+        PlatformID: ''
+    };
+    params.CheckMacValue = genEcpayCheckMacValue(params);
+
+    const res = await fetch(ECPAY_QUERY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString()
+    });
+    if (!res.ok) throw new Error(`ECPay query HTTP ${res.status}`);
+
+    const text = await res.text();
+    const fields = Object.fromEntries(new URLSearchParams(text));
+    if (!('TradeStatus' in fields)) throw new Error(`ECPay query 回應無 TradeStatus: ${text.slice(0, 200)}`);
+    return {
+        paid: String(fields.TradeStatus) === '1',
+        tradeStatus: String(fields.TradeStatus),
+        tradeAmt: Number(fields.TradeAmt || 0),
+        tradeNo: fields.TradeNo || ''
+    };
+}
+
+// 由 orderId 推回送單時用的 MerchantTradeNo（與建立付款表單時同一套算法）。
+// 一定要從「我們自己的訂單」推導，不能用 notify body 帶進來的值——那是攻擊者可控的。
+function merchantTradeNoOf(orderId) {
+    return String(orderId).replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
+}
+
 // 5. 創建付款訂單（自動路由：繁中→ECPay，韓文/英文→Polar）
 app.post('/api/payment/create', async (req, res) => {
     const { planType, lang, email } = req.body;
@@ -1571,6 +1624,35 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
         if (String(rtnCode) === '1' && orderId) {
             const order = await getOrderFromKV(orderId);
             if (order) {
+                // 已經發過 key 的訂單：對帳早就做過，直接走冪等路徑（補寄信等）
+                const alreadyIssued = order.status === 'paid' && order.licenseKey;
+
+                if (!alreadyIssued && shouldVerifyWithEcpay()) {
+                    let trade;
+                    try {
+                        trade = await queryEcpayTrade(merchantTradeNoOf(orderId));
+                    } catch (queryError) {
+                        // 查詢本身失敗（網路/綠界異常）→ fail open，不要卡住真實客戶，
+                        // 但大聲記錄，因為這是唯一繞得過對帳的路徑。
+                        console.error('🚨 [ECPay notify] 對帳查詢失敗，本次放行未經查證的付款:',
+                            orderId, queryError.message);
+                        trade = null;
+                    }
+
+                    if (trade && !trade.paid) {
+                        // 綠界明確說這筆沒付款成功 → 極可能是偽造的 notify。
+                        // 回 0 讓綠界之後重送：萬一只是綠界端資料延遲，真實付款仍會補發。
+                        console.warn('🚨 [ECPay notify] 綠界查無已付款交易，拒發授權:',
+                            orderId, 'TradeStatus=' + trade.tradeStatus);
+                        return res.send('0|Trade not verified');
+                    }
+                    if (trade && order.amount && trade.tradeAmt && Number(order.amount) !== trade.tradeAmt) {
+                        console.warn('🚨 [ECPay notify] 金額與綠界不符，拒發授權:',
+                            orderId, order.amount, '!=', trade.tradeAmt);
+                        return res.send('0|Amount mismatch');
+                    }
+                }
+
                 // 冪等：重送 notify 不會重複發 key，也不會重複寄信
                 await orderFlow.finalizePaidOrder(orderId, order, {
                     tradeNo: body.TradeNo || '',

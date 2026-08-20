@@ -9,6 +9,8 @@
  * 跑法：node website/test/payment-auth.test.js
  */
 const assert = require('assert');
+const crypto = require('crypto');
+const http = require('http');
 
 process.env.NODE_ENV = 'test';
 delete process.env.VERCEL_ENV;
@@ -21,7 +23,66 @@ process.env.ECPAY_HASH_IV = 'EkRm7iFT261dpevs';
 delete process.env.POLAR_ACCESS_TOKEN;
 delete process.env.RESEND_API_KEY;
 
+// 假的綠界 QueryTradeInfo：讓測試能操控「綠界說這筆付款成功了沒」
+let fakeEcpayReply = null;   // null = 回 500（模擬查詢失敗）
+const ecpayFake = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+        if (fakeEcpayReply === null) { res.writeHead(500); return res.end('error'); }
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end(fakeEcpayReply);
+    });
+});
+ecpayFake.listen(0);
+process.env.ECPAY_QUERY_URL = `http://127.0.0.1:${ecpayFake.address().port}/query`;
+
 const app = require('../server');
+
+function ecpayUrlEncode(str) {
+    return encodeURIComponent(str)
+        .replace(/%20/g, '+')
+        .replace(/%2d/gi, '-').replace(/%5f/gi, '_').replace(/%2e/gi, '.')
+        .replace(/%21/g, '!').replace(/%2a/g, '*').replace(/%28/g, '(').replace(/%29/g, ')')
+        .toLowerCase();
+}
+
+// 與 server.js 相同的 CheckMacValue 演算法：模擬「攻擊者已經有 HashKey/HashIV」
+function genMac(params) {
+    const sorted = Object.keys(params).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    let raw = `HashKey=${process.env.ECPAY_HASH_KEY}`;
+    for (const k of sorted) raw += `&${k}=${params[k]}`;
+    raw += `&HashIV=${process.env.ECPAY_HASH_IV}`;
+    return crypto.createHash('sha256').update(ecpayUrlEncode(raw)).digest('hex').toUpperCase();
+}
+
+function tradeReply({ status, amt }) {
+    return `HandlingCharge=0&ItemName=&MerchantID=${process.env.ECPAY_MERCHANT_ID}` +
+        `&MerchantTradeNo=X&PaymentDate=&PaymentType=&PaymentTypeChargeFee=0` +
+        `&TradeAmt=${amt}&TradeDate=&TradeNo=T123&TradeStatus=${status}&CheckMacValue=X`;
+}
+
+// 帶著「正確簽章」的 notify —— 金鑰外洩後攻擊者做得到的事
+async function signedNotify(orderId) {
+    const params = {
+        MerchantID: process.env.ECPAY_MERCHANT_ID,
+        MerchantTradeNo: String(orderId).replace(/[^A-Za-z0-9]/g, '').slice(0, 20),
+        RtnCode: '1',
+        RtnMsg: 'Succeeded',
+        TradeNo: 'FORGED' + Date.now(),
+        TradeAmt: '690',
+        PaymentDate: '2026/08/20 10:00:00',
+        PaymentType: 'Credit_CreditCard',
+        CustomField1: orderId
+    };
+    params.CheckMacValue = genMac(params);
+    const res = await fetch(base + '/api/payment/ecpay-notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+    });
+    return res.text();
+}
 
 let passed = 0;
 let failed = 0;
@@ -106,7 +167,43 @@ async function createOrder() {
         assert.notStrictEqual(data.order && data.order.status, 'paid', '偽造 notify 竟讓訂單變成 paid');
     });
 
+    await test('簽章正確但綠界查無此筆 → 拒發授權（金鑰外洩也偽造不了）', async () => {
+        fakeEcpayReply = tradeReply({ status: '10200047', amt: 0 });
+        const orderId = await createOrder();
+        const text = await signedNotify(orderId);
+        assert.ok(text.includes('Trade not verified'), `應拒發，實得：${text}`);
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.notStrictEqual(data.order && data.order.status, 'paid', '偽造 notify 竟讓訂單變 paid');
+    });
+
+    await test('綠界確認已付款且金額相符 → 正常發授權', async () => {
+        fakeEcpayReply = tradeReply({ status: '1', amt: 690 });
+        const orderId = await createOrder();
+        const text = await signedNotify(orderId);
+        assert.ok(text.includes('1|OK'), `應放行，實得：${text}`);
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.strictEqual(data.order && data.order.status, 'paid');
+        assert.ok(data.order.licenseKey, '真實付款應該拿到授權碼');
+    });
+
+    await test('綠界說已付款但金額對不上 → 拒發授權', async () => {
+        fakeEcpayReply = tradeReply({ status: '1', amt: 1 });
+        const orderId = await createOrder();
+        const text = await signedNotify(orderId);
+        assert.ok(text.includes('Amount mismatch'), `應拒發，實得：${text}`);
+    });
+
+    await test('對帳查詢失敗 → fail open 放行（不卡真實客戶，但會記錄）', async () => {
+        fakeEcpayReply = null;   // 假伺服器回 500
+        const orderId = await createOrder();
+        const text = await signedNotify(orderId);
+        assert.ok(text.includes('1|OK'), `查詢失敗時應放行，實得：${text}`);
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.strictEqual(data.order && data.order.status, 'paid');
+    });
+
     server.close();
+    ecpayFake.close();
     console.log(`\npayment auth: ${passed} passed, ${failed} failed`);
     process.exit(failed > 0 ? 1 : 0);
 })();
