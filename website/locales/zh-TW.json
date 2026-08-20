@@ -106,10 +106,10 @@
   "dl_label": "免費下載",
   "dl_title": "立即開始使用",
   "dl_desc": "免費試用一週，體驗所有功能",
-  "dl_mac_title": "macOS 版本",
-  "dl_mac_desc": "Intel + Apple Silicon，約 122MB",
+  "dl_mac_title": "macOS 版本（Apple Silicon）",
+  "dl_mac_desc": "M1／M2／M3／M4 機種 · DMG 安裝包 約 161MB",
   "dl_win_title": "Windows 版本",
-  "dl_win_desc": "Windows 10 以上",
+  "dl_win_desc": "Windows 10 以上 64-bit · 安裝檔 約 142MB",
   "dl_info1": "下載 DMG 後雙擊打開，將 KongGoo 拖到 Applications 資料夾即可",
   "dl_info2_prefix": "內含所需程式，",
   "dl_info2_bold": "無需另行安裝",
@@ -223,5 +223,7 @@
   "backHome": "返回首頁",
   "licenseNotFound": "未找到授權碼",
   "successWaitingLicense": "正在確認付款並產生授權碼...",
-  "successLicenseDelayed": "已收到付款完成，但授權碼尚在產生中，請稍後重新整理此頁面。"
+  "successLicenseDelayed": "已收到付款完成，但授權碼尚在產生中，請稍後重新整理此頁面。",
+  "dl_mac_intel_title": "macOS 版本（Intel）",
+  "dl_mac_intel_desc": "2020 年前的 Intel 機種 · DMG 安裝包 約 174MB"
 }

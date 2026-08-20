@@ -79,5 +79,11 @@
   "loading": "読み込み中...",
   "successWaitingLicense": "お支払いを確認し、ライセンスキーを生成しています...",
   "successLicenseDelayed": "お支払いは確認できましたが、ライセンスキーを生成中です。少ししてからこのページを再読み込みしてください。",
-  "pay_note2": "お支払い後にライセンスキーを表示し、メールでもお送りします"
+  "pay_note2": "お支払い後にライセンスキーを表示し、メールでもお送りします",
+  "dl_mac_title": "macOS 版（Apple Silicon）",
+  "dl_mac_desc": "M1／M2／M3／M4 搭載機 · DMG インストーラ 約161MB",
+  "dl_mac_intel_title": "macOS 版（Intel）",
+  "dl_mac_intel_desc": "2020年より前の Intel 機 · DMG インストーラ 約174MB",
+  "dl_win_title": "Windows 版",
+  "dl_win_desc": "Windows 10 以降 64bit · インストーラ 約142MB"
 }

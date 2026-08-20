@@ -106,10 +106,10 @@
   "dl_label": "Free Download",
   "dl_title": "Start Using Now",
   "dl_desc": "Free 1-week trial with all features",
-  "dl_mac_title": "macOS Version",
-  "dl_mac_desc": "Intel + Apple Silicon, ~122MB",
-  "dl_win_title": "Windows Version",
-  "dl_win_desc": "Windows 10 and above",
+  "dl_mac_title": "macOS (Apple Silicon)",
+  "dl_mac_desc": "M1/M2/M3/M4 Macs · DMG installer, ~161MB",
+  "dl_win_title": "Windows",
+  "dl_win_desc": "Windows 10 or later, 64-bit · installer, ~142MB",
   "dl_info1": "Double-click the downloaded DMG, drag KongGoo to Applications folder",
   "dl_info2_prefix": "Everything included, ",
   "dl_info2_bold": "no need to install",
@@ -223,5 +223,7 @@
   "backHome": "Back to home",
   "licenseNotFound": "License key not found",
   "successWaitingLicense": "Confirming your payment and generating the license key...",
-  "successLicenseDelayed": "Payment received, but the license key is still being generated. Please refresh this page shortly."
+  "successLicenseDelayed": "Payment received, but the license key is still being generated. Please refresh this page shortly.",
+  "dl_mac_intel_title": "macOS (Intel)",
+  "dl_mac_intel_desc": "Intel Macs from before 2020 · DMG installer, ~174MB"
 }

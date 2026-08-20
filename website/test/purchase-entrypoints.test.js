@@ -78,5 +78,36 @@ test('購買頁沒有留給客人看的 TODO', () => {
     assert.ok(!/TODO/.test(html), 'payment.html 還有 TODO 字樣會被客人看到');
 });
 
+// ── 下載連結一致性 ─────────────────────────────────────────────
+// 背景：下載連結硬編碼在 server.js / index.html / license.html 共 13 處，
+// 每次發版都得手動改。過去就發生過只改了首頁、忘了 API 與授權頁，
+// 客人從不同入口拿到不同版本。這裡釘死：全站所有 release 下載連結只能指向同一個 tag。
+test('全站下載連結指向同一個 release tag', () => {
+    const files = [
+        path.join(publicDir, '..', 'server.js'),
+        path.join(publicDir, 'index.html'),
+        path.join(publicDir, 'license.html')
+    ];
+    const tags = new Map();
+    for (const f of files) {
+        const text = fs.readFileSync(f, 'utf8');
+        // 只認真正的 repo 連結；server.js 註解裡有 OWNER/REPO/TAG 的格式範例，不能算進來
+            for (const m of text.matchAll(/awe7893625\/pikmin-architect\/releases\/download\/([^/]+)\//g)) {
+            if (!tags.has(m[1])) tags.set(m[1], []);
+            tags.get(m[1]).push(path.basename(f));
+        }
+    }
+    assert.ok(tags.size > 0, '找不到任何下載連結，選擇器可能失效了');
+    assert.strictEqual(tags.size, 1,
+        '下載連結指向多個版本：' + [...tags].map(([t, fs_]) => `${t}(${[...new Set(fs_)].join(',')})`).join(' / '));
+});
+
+test('三個平台的下載連結都在（macOS arm64 / macOS x64 / Windows）', () => {
+    const text = fs.readFileSync(path.join(publicDir, '..', 'server.js'), 'utf8');
+    for (const needle of ['arm64.dmg', 'x64.dmg', 'win-x64.exe']) {
+        assert.ok(text.includes(needle), `server.js 少了 ${needle} 的下載連結`);
+    }
+});
+
 console.log(`\npurchase entrypoints: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
