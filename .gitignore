@@ -79,3 +79,7 @@ website/金流串接說明.md
 .vercel
 .env*.local
 *.dmg
+ADMIN_KEY_BACKUP.txt
+.env.*
+*.p12
+*.p8

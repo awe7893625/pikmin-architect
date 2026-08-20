@@ -1465,6 +1465,13 @@ app.post('/api/payment/create', async (req, res) => {
             });
             const polarData = await polarRes.json();
             if (polarData.url) {
+                // 記下 checkout id：/api/payment/polar-confirm 要拿它回頭跟 Polar
+                // 核對「這筆真的付款成功」。沒有這個 id 就不發授權。
+                try {
+                    await setOrder(orderId, { ...orderData, polarCheckoutId: polarData.id || null });
+                } catch (e) {
+                    console.warn('⚠️ [Polar] 寫入 checkoutId 失敗:', e.message);
+                }
                 return res.json({
                     success: true,
                     orderId,
@@ -1581,6 +1588,14 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
 });
 
 // 5.1.1 Polar 付款成功回調（success_url redirect 後客戶端輪詢確認）
+// Polar 付款確認。
+//
+// ⚠️ 2026-08-20 安全修補：這支端點原本只要「有這個 orderId」就直接發授權，
+// 把「使用者被導回 success_url」當成付款證明。但 orderId 是 /api/payment/create
+// 直接回傳給呼叫端的，任何人都能建單拿到 orderId 再打這支，等於免費領授權碼。
+// 現在一律回頭跟 Polar 核對該 checkout 的真實狀態，核不過就不發。
+const POLAR_PAID_STATUSES = new Set(['succeeded', 'confirmed']);
+
 app.get('/api/payment/polar-confirm', async (req, res) => {
     const { orderId } = req.query;
     if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
@@ -1588,7 +1603,47 @@ app.get('/api/payment/polar-confirm', async (req, res) => {
     try {
         const order = await getOrderFromKV(orderId);
         if (!order) return res.status(404).json({ error: 'Order not found' });
-        // Polar success_url 被訪問 = 付款完成（已 paid 的話 finalize 只會補寄尚未寄出的信）
+
+        // 已經是 paid 的訂單：付款早就驗過了，這裡只補做「發信」等後續（冪等）
+        if (order.status === 'paid' && order.licenseKey) {
+            const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
+            return res.json({ success: true, licenseKey, planType: order.planType });
+        }
+
+        if (order.gateway !== 'polar' || !order.polarCheckoutId) {
+            return res.status(400).json({ error: 'Not a Polar order', code: 'GATEWAY_MISMATCH' });
+        }
+        if (!POLAR_ACCESS_TOKEN) {
+            console.error('❌ [Polar confirm] 缺 POLAR_ACCESS_TOKEN，無法驗證付款');
+            return res.status(503).json({ error: 'Payment verification unavailable', code: 'POLAR_UNCONFIGURED' });
+        }
+
+        let checkout;
+        try {
+            const r = await fetch(`https://api.polar.sh/v1/checkouts/${encodeURIComponent(order.polarCheckoutId)}`, {
+                headers: { 'Authorization': `Bearer ${POLAR_ACCESS_TOKEN}` }
+            });
+            checkout = await r.json();
+            if (!r.ok) {
+                console.warn('⚠️ [Polar confirm] 查詢 checkout 失敗:', r.status, JSON.stringify(checkout));
+                return res.status(502).json({ error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' });
+            }
+        } catch (e) {
+            console.error('❌ [Polar confirm] Polar API 錯誤:', e.message);
+            return res.status(502).json({ error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' });
+        }
+
+        // 綁定檢查：這個 checkout 必須真的屬於這筆訂單
+        const metaOrderId = checkout && checkout.metadata && checkout.metadata.orderId;
+        if (metaOrderId && metaOrderId !== orderId) {
+            console.warn('⚠️ [Polar confirm] checkout metadata 對不上訂單:', metaOrderId, '!=', orderId);
+            return res.status(400).json({ error: 'Order mismatch', code: 'ORDER_MISMATCH' });
+        }
+
+        if (!POLAR_PAID_STATUSES.has(String(checkout && checkout.status))) {
+            return res.json({ success: false, code: 'NOT_PAID', status: checkout && checkout.status });
+        }
+
         const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
         return res.json({ success: true, licenseKey, planType: order.planType });
     } catch (error) {

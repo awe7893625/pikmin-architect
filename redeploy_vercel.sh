@@ -1,7 +1,13 @@
 #!/bin/bash
+
+# ⚠️ 2026-08-20：這裡原本硬編碼了 VERCEL_TOKEN / ADMIN_KEY，而本 repo 是 public，
+# 等於把正式環境金鑰公開了七個月。兩把都已作廢並輪換。金鑰一律從環境變數讀，
+# 不要再寫回檔案裡。
+#   export VERCEL_TOKEN=...            # vercel.com/account/tokens
+#   export ADMIN_KEY="$(cat ~/.konggoo-admin-key)"
 # Vercel 重新部署腳本
 
-VERCEL_TOKEN="4Lcg8iu6Zp70xSFCCqS2ijeY"
+VERCEL_TOKEN="${VERCEL_TOKEN:?請先 export VERCEL_TOKEN（見上方說明）}"
 PROJECT_ID="prj_Ryy4nn9t3KR5sNEByq62JVO3TAlt"
 TEAM_ID="team_aDZBTaEejPcweAPfcMYF63rs"
 

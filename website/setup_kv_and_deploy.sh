@@ -2,7 +2,7 @@
 # 設定 Vercel KV 並部署的腳本
 # 注意：KV store 需要先在 Dashboard 創建，此腳本用於設定環境變數和部署
 
-VERCEL_TOKEN="4Lcg8iu6Zp70xSFCCqS2ijeY"
+VERCEL_TOKEN="${VERCEL_TOKEN:?請先 export VERCEL_TOKEN}"
 PROJECT_NAME="pikmin-architect"
 TEAM_ID="team_aDZBTaEejPcweAPfcMYF63rs"
 

@@ -1,10 +1,16 @@
 #!/bin/bash
+
+# ⚠️ 2026-08-20：這裡原本硬編碼了 VERCEL_TOKEN / ADMIN_KEY，而本 repo 是 public，
+# 等於把正式環境金鑰公開了七個月。兩把都已作廢並輪換。金鑰一律從環境變數讀，
+# 不要再寫回檔案裡。
+#   export VERCEL_TOKEN=...            # vercel.com/account/tokens
+#   export ADMIN_KEY="$(cat ~/.konggoo-admin-key)"
 # 設定 Admin Console 環境變數
 
-VERCEL_TOKEN="4Lcg8iu6Zp70xSFCCqS2ijeY"
+VERCEL_TOKEN="${VERCEL_TOKEN:?請先 export VERCEL_TOKEN（見上方說明）}"
 PROJECT_NAME="pikmin-architect"
 TEAM_ID="team_aDZBTaEejPcweAPfcMYF63rs"
-ADMIN_KEY="Hc0_Vwke0-m1_YKpVtvJ3sswAYi1senrJf_by_LcBSo"
+ADMIN_KEY="${ADMIN_KEY:?請先 export ADMIN_KEY（見上方說明）}"
 
 echo "🔧 正在為專案 '$PROJECT_NAME' 設定 Admin Console 環境變數..."
 
