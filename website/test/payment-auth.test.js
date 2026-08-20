@@ -202,6 +202,62 @@ async function createOrder() {
         assert.strictEqual(data.order && data.order.status, 'paid');
     });
 
+    // ── OrderResultURL（瀏覽器導回）這條路 ──────────────────────
+    // 這支端點原本連 CheckMacValue 都沒驗，只看 RtnCode=1 就發授權碼，
+    // 比 notify 更好利用（不需要任何金鑰）。
+
+    async function postForm(path, params) {
+        const res = await fetch(base + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(params).toString(),
+            redirect: 'manual'
+        });
+        return res.status;
+    }
+
+    function resultParams(orderId, withMac) {
+        const params = {
+            MerchantID: process.env.ECPAY_MERCHANT_ID,
+            MerchantTradeNo: String(orderId).replace(/[^A-Za-z0-9]/g, '').slice(0, 20),
+            RtnCode: '1',
+            RtnMsg: 'Succeeded',
+            TradeNo: 'RESULT' + Date.now(),
+            TradeAmt: '690',
+            PaymentDate: '2026/08/20 10:00:00',
+            PaymentType: 'Credit_CreditCard',
+            CustomField1: orderId
+        };
+        if (withMac) params.CheckMacValue = genMac(params);
+        return params;
+    }
+
+    await test('OrderResultURL 沒帶 CheckMacValue → 不發授權（原本會發）', async () => {
+        fakeEcpayReply = tradeReply({ status: '1', amt: 690 });
+        const orderId = await createOrder();
+        await postForm('/payment/success', resultParams(orderId, false));
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.ok(!(data.order && data.order.licenseKey), '沒簽章竟拿到授權碼');
+        assert.notStrictEqual(data.order && data.order.status, 'paid');
+    });
+
+    await test('OrderResultURL 簽章正確但綠界查無此筆 → 不發授權', async () => {
+        fakeEcpayReply = tradeReply({ status: '10200047', amt: 0 });
+        const orderId = await createOrder();
+        await postForm('/payment/success', resultParams(orderId, true));
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.ok(!(data.order && data.order.licenseKey), '偽造付款竟拿到授權碼');
+    });
+
+    await test('OrderResultURL 綠界確認已付款 → 正常發授權', async () => {
+        fakeEcpayReply = tradeReply({ status: '1', amt: 690 });
+        const orderId = await createOrder();
+        await postForm('/payment/success', resultParams(orderId, true));
+        const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
+        assert.strictEqual(data.order && data.order.status, 'paid');
+        assert.ok(data.order.licenseKey, '真實付款應該拿到授權碼');
+    });
+
     server.close();
     ecpayFake.close();
     console.log(`\npayment auth: ${passed} passed, ${failed} failed`);

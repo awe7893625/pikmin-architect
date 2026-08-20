@@ -681,11 +681,20 @@ app.post('/payment/success', async (req, res) => {
         if (String(body.RtnCode) === '1' && orderId) {
             const order = await getOrderFromKV(orderId);
             if (order) {
-                // 與 notify 走同一條冪等路徑：誰先到誰發 key，另一個不會重發
-                await orderFlow.finalizePaidOrder(orderId, order, {
-                    tradeNo: body.TradeNo || '',
-                    gateway: 'ecpay'
-                });
+                // ⚠️ 2026-08-20：這裡原本只看 RtnCode 就發授權碼，連 CheckMacValue 都沒驗，
+                // 任何人 POST {CustomField1, RtnCode:1} 就能免費領授權。現在與 notify 共用
+                // 同一套驗證（驗簽章 + 回頭跟綠界對帳）。
+                const verdict = await verifyEcpayPayment(body, orderId, order);
+                if (verdict.ok) {
+                    // 與 notify 走同一條冪等路徑：誰先到誰發 key，另一個不會重發
+                    await orderFlow.finalizePaidOrder(orderId, order, {
+                        tradeNo: body.TradeNo || '',
+                        gateway: 'ecpay'
+                    });
+                } else {
+                    // 不發 key，但仍把使用者導到成功頁；該頁會輪詢訂單狀態顯示「產生中」
+                    console.warn('🚨 [ECPay OrderResultURL] 拒發授權:', orderId, verdict.reason, verdict.detail);
+                }
             }
         }
 
@@ -1455,6 +1464,47 @@ function merchantTradeNoOf(orderId) {
     return String(orderId).replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
 }
 
+/**
+ * 綠界付款真偽驗證——notify 與 OrderResultURL 共用同一把尺。
+ *
+ * 兩道關卡：
+ *   (1) CheckMacValue：擋掉沒有金鑰的人
+ *   (2) 回頭跟綠界對帳：擋掉「有金鑰但沒真的付錢」的人（金鑰外洩過，所以必要）
+ *
+ * 回傳 { ok: true } 才可以發授權碼；ok:false 時 reason 供記錄與回應用。
+ */
+async function verifyEcpayPayment(body, orderId, order) {
+    const params = { ...body };
+    delete params.CheckMacValue;
+    const expectedMac = genEcpayCheckMacValue(params);
+    if (body.CheckMacValue !== expectedMac) {
+        return { ok: false, reason: 'BAD_MAC', detail: `${body.CheckMacValue} != ${expectedMac}` };
+    }
+
+    // 已經發過 key：付款早就驗過了，走冪等路徑，不必再對帳一次
+    if (order && order.status === 'paid' && order.licenseKey) return { ok: true, alreadyIssued: true };
+
+    if (!shouldVerifyWithEcpay()) return { ok: true, skipped: true };
+
+    let trade;
+    try {
+        trade = await queryEcpayTrade(merchantTradeNoOf(orderId));
+    } catch (queryError) {
+        // 查詢本身失敗（網路/綠界異常）→ fail open，不要卡住真實客戶，
+        // 但大聲記錄，因為這是唯一繞得過對帳的路徑。
+        console.error('🚨 [ECPay] 對帳查詢失敗，本次放行未經查證的付款:', orderId, queryError.message);
+        return { ok: true, failedOpen: true };
+    }
+
+    if (!trade.paid) {
+        return { ok: false, reason: 'NOT_PAID', detail: 'TradeStatus=' + trade.tradeStatus };
+    }
+    if (order && order.amount && trade.tradeAmt && Number(order.amount) !== trade.tradeAmt) {
+        return { ok: false, reason: 'AMOUNT_MISMATCH', detail: `${order.amount} != ${trade.tradeAmt}` };
+    }
+    return { ok: true };
+}
+
 // 5. 創建付款訂單（自動路由：繁中→ECPay，韓文/英文→Polar）
 app.post('/api/payment/create', async (req, res) => {
     const { planType, lang, email } = req.body;
@@ -1608,51 +1658,20 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
         const body = req.body;
         console.log('📥 ECPay notify 收到:', JSON.stringify(body));
 
-        // 驗證 CheckMacValue
-        const receivedMac = body.CheckMacValue;
-        const paramsToCheck = { ...body };
-        delete paramsToCheck.CheckMacValue;
-        const expectedMac = genEcpayCheckMacValue(paramsToCheck);
-        if (receivedMac !== expectedMac) {
-            console.warn('⚠️ [ECPay notify] CheckMacValue 不符:', receivedMac, '!=', expectedMac);
-            return res.send('0|CheckMacValue Error');
-        }
-
         const rtnCode = body.RtnCode;
         const orderId = body.CustomField1;
 
         if (String(rtnCode) === '1' && orderId) {
             const order = await getOrderFromKV(orderId);
             if (order) {
-                // 已經發過 key 的訂單：對帳早就做過，直接走冪等路徑（補寄信等）
-                const alreadyIssued = order.status === 'paid' && order.licenseKey;
-
-                if (!alreadyIssued && shouldVerifyWithEcpay()) {
-                    let trade;
-                    try {
-                        trade = await queryEcpayTrade(merchantTradeNoOf(orderId));
-                    } catch (queryError) {
-                        // 查詢本身失敗（網路/綠界異常）→ fail open，不要卡住真實客戶，
-                        // 但大聲記錄，因為這是唯一繞得過對帳的路徑。
-                        console.error('🚨 [ECPay notify] 對帳查詢失敗，本次放行未經查證的付款:',
-                            orderId, queryError.message);
-                        trade = null;
-                    }
-
-                    if (trade && !trade.paid) {
-                        // 綠界明確說這筆沒付款成功 → 極可能是偽造的 notify。
-                        // 回 0 讓綠界之後重送：萬一只是綠界端資料延遲，真實付款仍會補發。
-                        console.warn('🚨 [ECPay notify] 綠界查無已付款交易，拒發授權:',
-                            orderId, 'TradeStatus=' + trade.tradeStatus);
-                        return res.send('0|Trade not verified');
-                    }
-                    if (trade && order.amount && trade.tradeAmt && Number(order.amount) !== trade.tradeAmt) {
-                        console.warn('🚨 [ECPay notify] 金額與綠界不符，拒發授權:',
-                            orderId, order.amount, '!=', trade.tradeAmt);
-                        return res.send('0|Amount mismatch');
-                    }
+                const verdict = await verifyEcpayPayment(body, orderId, order);
+                if (!verdict.ok) {
+                    console.warn('🚨 [ECPay notify] 拒發授權:', orderId, verdict.reason, verdict.detail);
+                    if (verdict.reason === 'BAD_MAC') return res.send('0|CheckMacValue Error');
+                    if (verdict.reason === 'AMOUNT_MISMATCH') return res.send('0|Amount mismatch');
+                    // 綠界說沒付款：回 0 讓綠界稍後重送，真付款有延遲時仍會補發
+                    return res.send('0|Trade not verified');
                 }
-
                 // 冪等：重送 notify 不會重複發 key，也不會重複寄信
                 await orderFlow.finalizePaidOrder(orderId, order, {
                     tradeNo: body.TradeNo || '',
