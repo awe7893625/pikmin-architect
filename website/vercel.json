@@ -11,6 +11,10 @@
   ],
   "routes": [
     {
+      "src": "/admin.html",
+      "dest": "/server.js"
+    },
+    {
       "handle": "filesystem"
     },
     {
