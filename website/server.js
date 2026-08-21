@@ -671,9 +671,9 @@ app.get('/payment/success', (req, res) => {
 
 // 付款成功頁面（POST — ECPay OrderResultURL 回傳）
 app.post('/payment/success', async (req, res) => {
+    const body = req.body || {};
+    const orderId = body.CustomField1;
     try {
-        const body = req.body;
-        const orderId = body.CustomField1;
         console.log('📥 ECPay OrderResultURL 收到, orderId:', orderId, 'RtnCode:', body.RtnCode);
 
         // 若 ECPay notify 已先處理完，order 已是 paid
@@ -704,13 +704,17 @@ app.post('/payment/success', async (req, res) => {
             if (order && order.licenseKey) {
                 return res.redirect(`/payment/success?licenseKey=${order.licenseKey}&planType=${order.planType}`);
             }
+            return res.redirect('/payment/success?orderId=' + encodeURIComponent(orderId));
         }
-        // Fallback: 直接顯示成功頁面
+        // Fallback: 沒有 orderId 才走無參數成功頁
         const successPath = path.resolve(paymentProcessDir, 'success.html');
         if (fs.existsSync(successPath)) return res.sendFile(successPath);
         res.redirect('/payment/success');
     } catch (error) {
         console.error('❌ ECPay OrderResultURL 錯誤:', error);
+        if (orderId) {
+            return res.redirect('/payment/success?orderId=' + encodeURIComponent(orderId));
+        }
         res.redirect('/payment/success');
     }
 });
@@ -1136,9 +1140,9 @@ app.post('/api/license/verify', async (req, res) => {
             planType: license.planType || 'annual',
             expiresAt: license.expiresAt || null,
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-arm64.dmg',
-                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-x64.dmg',
-                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-win-x64.exe'
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-arm64.dmg',
+                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-x64.dmg',
+                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-win-x64.exe'
             }
         });
     } catch (error) {
@@ -1910,6 +1914,8 @@ app.post('/api/admin/create-license', async (req, res) => {
         createdAt: serverTime,
         activatedAt: deviceId ? serverTime : null,
         planType: 'annual', // 舊的 admin 端點改為 annual
+        durationDays: planDurationDays('annual'),
+        expiresAt: null,
         issuedBy: 'admin',
         note: null
     });
@@ -1953,7 +1959,7 @@ app.get('/downloads/:file', (req, res) => {
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
         const rawUrl =
             process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-arm64.dmg';
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-arm64.dmg';
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
@@ -1984,8 +1990,8 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-arm64.dmg?download=1',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.0/KongGoo-1.1.0-x64.dmg?download=1'
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-arm64.dmg?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-x64.dmg?download=1'
                 ];
                 
                 let fallbackIndex = 0;
@@ -2727,6 +2733,15 @@ if (ENABLE_ADMIN_CONSOLE) {
         res.sendFile(adminHtmlPath);
     });
 }
+
+// 必須比 express.static 早註冊，否則 public/admin.html 會被直接送出。
+// Vercel 上 filesystem handle 更早於 server.js，vercel.json 另有 /admin.html → server.js。
+app.get('/admin.html', (req, res) => {
+    if (process.env.ENABLE_ADMIN_CONSOLE !== '1') {
+        return res.status(404).send('Not Found');
+    }
+    res.sendFile(path.join(publicDir, 'admin.html'));
+});
 
 // 健康檢查
 app.get('/api/health', (req, res) => {

@@ -216,6 +216,16 @@ async function createOrder() {
         return res.status;
     }
 
+    async function postFormRedirect(path, params) {
+        const res = await fetch(base + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams(params).toString(),
+            redirect: 'manual'
+        });
+        return { status: res.status, location: res.headers.get('location') };
+    }
+
     function resultParams(orderId, withMac) {
         const params = {
             MerchantID: process.env.ECPAY_MERCHANT_ID,
@@ -256,6 +266,36 @@ async function createOrder() {
         const { data } = await getJson(`/api/payment/order/${encodeURIComponent(orderId)}`);
         assert.strictEqual(data.order && data.order.status, 'paid');
         assert.ok(data.order.licenseKey, '真實付款應該拿到授權碼');
+    });
+
+    await test('OrderResultURL 訂單未發碼時 redirect 的 Location 含 orderId', async () => {
+        fakeEcpayReply = tradeReply({ status: '10200047', amt: 0 });
+        const orderId = await createOrder();
+        const { status, location } = await postFormRedirect('/payment/success', resultParams(orderId, true));
+        assert.ok(status >= 300 && status < 400, `應 redirect，實得 ${status}`);
+        assert.ok(location, '應有 Location');
+        const url = new URL(location, base);
+        assert.strictEqual(url.pathname, '/payment/success');
+        assert.strictEqual(url.searchParams.get('orderId'), orderId);
+        assert.ok(!url.searchParams.get('licenseKey'), '未發碼不該帶 licenseKey');
+    });
+
+    await test('admin create-license 產生的 license 帶有 durationDays=365', async () => {
+        const created = await postJson('/api/admin/create-license', {
+            adminKey: process.env.ADMIN_KEY
+        });
+        assert.strictEqual(created.status, 200, JSON.stringify(created.data));
+        assert.ok(created.data.licenseKey, '應回傳 licenseKey');
+        const deviceId = 'admin-create-' + Date.now();
+        const activated = await postJson('/api/license/activate', {
+            deviceId,
+            licenseKey: created.data.licenseKey
+        });
+        assert.strictEqual(activated.status, 200, JSON.stringify(activated.data));
+        assert.ok(activated.data.expiresAt, '缺 durationDays 時啟用會變成永久');
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const delta = new Date(activated.data.expiresAt) - new Date(activated.data.activatedAt);
+        assert.ok(Math.abs(delta - 365 * DAY_MS) < 2000, `效期不是 365 天（實際 ${delta / DAY_MS} 天）`);
     });
 
     server.close();
