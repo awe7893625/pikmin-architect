@@ -14,8 +14,9 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const LANGS = ['zh-TW', 'zh-CN', 'en', 'ja', 'ko'];
 
-// 購買流程頁面：這些頁面的 i18n key 必須五語系齊全
+// 首頁與購買流程頁面：這些頁面的 i18n key 必須五語系齊全
 const FLOW_PAGES = [
+    path.join(root, 'public', 'index.html'),
     path.join(root, 'public', 'payment.html'),
     path.join(root, 'public', 'payment', 'success.html')
 ];
@@ -42,6 +43,19 @@ function keysUsedIn(file) {
     return [...keys];
 }
 
+function formatMissing(lang, missing) {
+    const preview = missing.slice(0, 5).join(', ');
+    const suffix = missing.length > 5 ? `…等共 ${missing.length} 個` : '';
+    return `${lang} 缺 ${missing.length} 個，前 5 個：${preview}${suffix}`;
+}
+
+function gapsFor(used) {
+    return LANGS.flatMap((lang) => {
+        const missing = used.filter((key) => !(key in locales[lang]));
+        return missing.length ? [formatMissing(lang, missing)] : [];
+    });
+}
+
 const locales = Object.fromEntries(
     LANGS.map((l) => [l, JSON.parse(fs.readFileSync(path.join(root, 'locales', `${l}.json`), 'utf8'))])
 );
@@ -50,14 +64,16 @@ for (const page of FLOW_PAGES) {
     const name = path.relative(path.join(root, 'public'), page);
     const used = keysUsedIn(page);
     test(`${name} 的 ${used.length} 個文案 key 五語系齊全`, () => {
-        const gaps = [];
-        for (const lang of LANGS) {
-            const missing = used.filter((k) => !(k in locales[lang]));
-            if (missing.length) gaps.push(`${lang} 缺 ${missing.join(', ')}`);
-        }
+        const gaps = gapsFor(used);
         assert.strictEqual(gaps.length, 0, gaps.join(' / '));
     });
 }
+
+const FLOW_KEYS = [...new Set(FLOW_PAGES.flatMap(keysUsedIn))];
+test(`首頁與購買流程頁用到的 ${FLOW_KEYS.length} 個 key 五語系齊全`, () => {
+    const gaps = gapsFor(FLOW_KEYS);
+    assert.strictEqual(gaps.length, 0, gaps.join(' / '));
+});
 
 test('語系檔沒有 TODO 或過時的「不提供自動轉移」政策字樣', () => {
     const bad = [];
