@@ -83,3 +83,7 @@ ADMIN_KEY_BACKUP.txt
 .env.*
 *.p12
 *.p8
+
+# Python 快取（scripts/ 下的閘腳本會產生）
+__pycache__/
+*.pyc
