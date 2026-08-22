@@ -187,8 +187,8 @@
   "paymentReadBeforeBuy": "구매 전 반드시 읽어주세요",
   "bindingRuleTitle": "라이선스 바인딩 규칙",
   "bindingRuleBody": "라이선스 키는 일회용이며 활성화 시 한 대의 기기(deviceId)에 바인딩됩니다. 기기 변경이나 재설치 시에는 앱의 활성화 창에서 구매 시 사용한 이메일로 직접 해제할 수 있습니다. 수동 지원이 필요하면 awe7893625@gmail.com 으로 연락해 주세요.",
-  "failClosedTitle": "오프라인 / 서버 중단 시 동작 (Fail Closed)",
-  "failClosedBody": "라이선스 서비스를 사용할 수 없는 동안 앱은 사유를 표시하고 라이선스가 필요한 기능을 잠급니다. 잠시 후 다시 시도하거나 라이선스 상태를 다시 확인해 주세요.",
+  "failClosedTitle": "오프라인 사용 및 라이선스 재검증",
+  "failClosedBody": "활성화된 라이선스는 오프라인이거나 서버 점검 중에도 최대 30일 동안 정상적으로 사용할 수 있습니다. 30일이 지나면 인터넷에 연결하여 라이선스를 다시 검증해야 합니다. 아직 활성화하지 않은 라이선스는 활성화하려면 인터넷 연결이 필요합니다.",
   "windowsStatusTitle": "Windows 버전 상태",
   "windowsStatusBody": "Windows 버전은 현재 베타이며 기능이 완전하지 않을 수 있습니다 (macOS와 동일한 지원 아님). 이 페이지의 가격은 주로 macOS 버전 기준입니다.",
   "errorCodeTableTitle": "오류 코드 표",
@@ -224,5 +224,6 @@
   "successWaitingLicense": "결제를 확인하고 라이선스 키를 생성하는 중입니다...",
   "successLicenseDelayed": "결제는 확인되었지만 라이선스 키를 생성 중입니다. 잠시 후 이 페이지를 새로고침해 주세요.",
   "dl_mac_intel_title": "macOS 버전(Intel)",
-  "dl_mac_intel_desc": "2020년 이전 Intel 기종 · DMG 설치 파일 약 174MB"
+  "dl_mac_intel_desc": "2020년 이전 Intel 기종 · DMG 설치 파일 약 174MB",
+  "dev_step2_desc_1": "먼저 "
 }

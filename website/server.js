@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const cors = require('cors');
+const crypto = require('crypto');
 const { execSync } = require('child_process');
 const {
     planDurationDays,
@@ -2739,6 +2740,32 @@ if (ENABLE_ADMIN_CONSOLE) {
 app.get('/admin.html', (req, res) => {
     if (process.env.ENABLE_ADMIN_CONSOLE !== '1') {
         return res.status(404).send('Not Found');
+    }
+    const adminKey = process.env.ADMIN_KEY;
+    if (!adminKey) {
+        return res.status(404).send('Not Found');
+    }
+
+    const authorization = req.get('authorization');
+    let password = '';
+    const basicAuth = authorization && authorization.match(/^Basic\s+(.+)$/i);
+    if (basicAuth) {
+        const decoded = Buffer.from(basicAuth[1], 'base64').toString('utf8');
+        const separator = decoded.indexOf(':');
+        if (separator !== -1) {
+            password = decoded.slice(separator + 1);
+        }
+    }
+
+    const expected = Buffer.from(adminKey, 'utf8');
+    const supplied = Buffer.from(password, 'utf8');
+    const authorized = supplied.length === expected.length
+        ? crypto.timingSafeEqual(supplied, expected)
+        : (crypto.timingSafeEqual(expected, Buffer.alloc(expected.length)), false);
+    if (!authorized) {
+        return res.status(401)
+            .set('WWW-Authenticate', 'Basic realm="KongGoo Admin"')
+            .send('Unauthorized');
     }
     res.sendFile(path.join(publicDir, 'admin.html'));
 });
