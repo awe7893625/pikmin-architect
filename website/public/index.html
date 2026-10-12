@@ -28,6 +28,9 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <script defer src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script defer src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
     <style>
         /* ===== Reset & Base ===== */
         *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1076,15 +1079,34 @@ let demoMapSearchMarker = null;
 let demoRouteLine = null;
 let demoRouteWaypoints = [];
 
+/* Basemap: CARTO tiles started returning "API KEY REQUIRED" (2026-10). OpenFreeMap is free, keyless and
+   allows commercial use; browsers without WebGL fall back to OpenStreetMap raster tiles. Both need attribution. */
+function addDemoBasemap(map) {
+    const webgl = (() => {
+        try { const c = document.createElement('canvas'); return !!(c.getContext('webgl2') || c.getContext('webgl')); }
+        catch (e) { return false; }
+    })();
+    if (webgl && window.maplibregl && L.maplibreGL) {
+        L.maplibreGL({
+            style: 'https://tiles.openfreemap.org/styles/liberty',
+            attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+        }).addTo(map);
+    } else {
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+        }).addTo(map);
+    }
+}
+
 function initDemoMap() {
     const lat = 25.033963, lon = 121.564472;
     demoMapInstance = L.map('demoMap', {
         center: [lat, lon], zoom: 14,
-        zoomControl: false, attributionControl: false
+        zoomControl: false, attributionControl: true
     });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        maxZoom: 19
-    }).addTo(demoMapInstance);
+    demoMapInstance.attributionControl.setPrefix(false);
+    addDemoBasemap(demoMapInstance);
     demoMapMarker = L.marker([lat, lon], {
         icon: L.divIcon({
             className: 'demo-marker-pulse',
