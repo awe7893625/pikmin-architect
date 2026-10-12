@@ -401,9 +401,28 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"></script>
     <script>
-        var map = L.map('map', {zoomControl: false, attributionControl: false}).setView([25.033, 121.565], 16);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(map);
+        var map = L.map('map', {zoomControl: false, attributionControl: true}).setView([25.033, 121.565], 16);
+        map.attributionControl.setPrefix(false);
+        // CARTO tiles now require an API key (2026-10). OpenFreeMap is keyless; no WebGL -> OSM raster fallback.
+        (function addBasemap() {
+            var webgl = false;
+            try { var c = document.createElement('canvas'); webgl = !!(c.getContext('webgl2') || c.getContext('webgl')); } catch (e) {}
+            if (webgl && window.maplibregl && L.maplibreGL) {
+                L.maplibreGL({
+                    style: 'https://tiles.openfreemap.org/styles/liberty',
+                    attribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+                }).addTo(map);
+            } else {
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>'
+                }).addTo(map);
+            }
+        })();
 
         var pikmin = L.marker([25.033, 121.565], { icon: L.divIcon({ className: 'apple-blue-dot' }) }).addTo(map);
         var targetMarker = L.marker([0,0], { icon: L.divIcon({ className: 'preview-dot' }) });
