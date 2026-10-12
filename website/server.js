@@ -1143,7 +1143,7 @@ app.post('/api/license/verify', async (req, res) => {
             download: {
                 mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-arm64.dmg',
                 macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-x64.dmg',
-                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.1/KongGoo-1.1.1-win-x64.exe'
+                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-win-x64.exe'
             }
         });
     } catch (error) {
