@@ -553,6 +553,8 @@ const ADMIN_KEY = process.env.ADMIN_KEY || 'default-admin-key-change-in-producti
 
 // 確保路徑正確（Vercel 和本地環境）
 const publicDir = path.join(__dirname, 'public');
+const { LANGS, createSeoRenderer } = require('./lib/seo-pages');
+const seoRenderer = createSeoRenderer({ publicDir, localesDir: path.join(__dirname, 'locales') });
 const paymentProcessDir = path.join(__dirname, 'public', 'payment');
 
 // 可選：統一入口域名（避免使用者看到舊域名並存）
@@ -582,14 +584,34 @@ app.use((req, res, next) => {
 // 主頁面
 app.get('/', (req, res) => {
     try {
-        const indexPath = path.resolve(publicDir, 'index.html');
-        console.log('📄 發送主頁面:', indexPath, '存在:', fs.existsSync(indexPath));
-        res.sendFile(indexPath);
+        res.set('Content-Language', 'zh-TW');
+        res.set('Cache-Control', 'public, max-age=300');
+        return res.status(200).type('html').send(seoRenderer.render('zh-TW'));
     } catch (error) {
         console.error('❌ 主頁面錯誤:', error);
-        res.status(500).json({ error: 'Internal Server Error', message: error.message });
+        return res.sendFile(path.resolve(publicDir, 'index.html'));
     }
 });
+
+for (const language of LANGS.filter((item) => item.code !== 'zh-TW')) {
+    const noSlashPath = language.path.slice(0, -1);
+    app.get([language.path, noSlashPath], (req, res) => {
+        const requestPath = req.originalUrl.split('?')[0];
+        if (requestPath === noSlashPath) {
+            const queryIndex = req.originalUrl.indexOf('?');
+            const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+            return res.redirect(301, `${language.path}${query}`);
+        }
+        try {
+            res.set('Content-Language', language.code);
+            res.set('Cache-Control', 'public, max-age=300');
+            return res.status(200).type('html').send(seoRenderer.render(language.code));
+        } catch (error) {
+            console.error(`❌ ${language.code} 頁面錯誤:`, error);
+            return res.sendFile(path.resolve(publicDir, 'index.html'));
+        }
+    });
+}
 
 // 授權/下載自助頁
 app.get('/license', (req, res) => {

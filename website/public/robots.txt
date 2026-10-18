@@ -1,6 +1,82 @@
+# Public pages are crawlable; sensitive endpoints stay closed.
 User-agent: *
 Allow: /
 Disallow: /admin
 Disallow: /api/
 Disallow: /payment/ecpay-checkout
+
+# Explicit AI, search, and regional crawlers use their own matching group.
+User-agent: GPTBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: CCBot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: Bingbot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+# Yeti is Naver's crawler.
+User-agent: Yeti
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: Googlebot
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /payment/ecpay-checkout
+
 Sitemap: https://konggoo.uk/sitemap.xml

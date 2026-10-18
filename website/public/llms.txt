@@ -1,0 +1,56 @@
+# KongGoo (摃菇)
+
+> KongGoo is a desktop GPS location simulator for USB-connected iPhones, built for location-based games, location testing, and more.
+
+## Overview
+
+KongGoo runs on macOS (Intel and Apple Silicon) and Windows 10+. It simulates or changes the GPS location of a USB-connected iPhone running iOS 16 or later. iPhone Developer Mode is required; no jailbreak is needed. Use it with location-based games such as Pikmin Bloom and Pokemon GO, or for location testing.
+
+## Features
+
+- Teleport to any location and plan routes. Scatter route mode runs for up to 5 minutes per run, then stops automatically.
+- Search by landmark, address, or latitude and longitude; save favorite places grouped by country.
+- Cross-platform for macOS and Windows. The macOS build is Apple notarized.
+
+## Pricing
+
+- Free 7-day trial, no credit card, and no automatic charge after the trial.
+- Taiwan (Traditional Chinese, https://konggoo.uk/): NT$690/year and NT$1,750 lifetime, priced in TWD.
+- International pages (/en/, /ja/, /ko/, /zh-CN/): US$22 annual license (one-time payment for 1 year, no auto-renewal) and US$55 lifetime license.
+- Japan reference prices: approximately ¥3,300/year and ¥8,300 lifetime. Korea reference prices: approximately ₩30,000/year and ₩76,000 lifetime.
+- One license key binds to one device.
+
+## Downloads (GitHub release v1.1.2)
+
+- macOS Apple Silicon: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg
+- macOS Intel: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-x64.dmg
+- Windows: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-win-x64.exe
+
+## Language pages and resources
+
+- Traditional Chinese (default): https://konggoo.uk/
+- Japanese: https://konggoo.uk/ja/
+- Korean: https://konggoo.uk/ko/
+- English: https://konggoo.uk/en/
+- Simplified Chinese: https://konggoo.uk/zh-CN/
+- License and download self-service: https://konggoo.uk/license
+- Sitemap: https://konggoo.uk/sitemap.xml
+
+## FAQ
+
+- **Will the trial charge me automatically?** No. There is no automatic charge after the free 7-day trial.
+- **Developer Mode is missing on my iPhone.** Developer Mode requires iOS 16 or later. Connect the iPhone by USB and tap “Initialize connection” in KongGoo first; then check Settings > Privacy & Security.
+- **How long can a route run?** Each scatter route run lasts up to 5 minutes, then stops automatically.
+- **Can I use one license on multiple devices?** No. One license key binds to one device.
+- **Why does macOS ask for an administrator password during initialization?** USB communication with iOS devices needs administrator rights.
+- **Will macOS show a “damaged” warning?** Normally it is not shown because the app is Apple notarized.
+
+## Contact
+
+awe7893625@gmail.com
+
+## 語言摘要
+
+- 繁體中文：KongGoo 是適用於 macOS 與 Windows 的桌面定位模擬工具，可透過 USB 連接 iPhone，供定位遊戲與位置測試使用。
+- 日本語：KongGooは、USB接続したiPhoneの位置情報を変更できるmacOS・Windows向けデスクトップアプリです。位置情報を使うゲームや位置テストに利用できます。
+- 한국어: KongGoo는 USB로 연결한 iPhone의 위치를 변경할 수 있는 macOS 및 Windows용 데스크톱 앱으로, 위치 기반 게임과 위치 테스트에 사용할 수 있습니다.

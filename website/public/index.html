@@ -5,6 +5,7 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-3EQSD6S7NQ"></script>
     <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-3EQSD6S7NQ');</script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--SEO:HEAD-->
     <title>KongGoo 摃菇 — iOS 定位模擬器 | iPhone GPS 位置修改工具 免費下載</title>
     <meta name="description" content="KongGoo（摃菇）— 專業 iOS 定位模擬器，免越獄修改 iPhone GPS 位置。支援瞬移、路線規劃、地標搜尋，macOS / Windows 雙平台，免費試用一週。">
     <meta name="keywords" content="iOS 定位模擬器, iOS GPS 模擬, iPhone 定位修改, GPS spoof iOS, 位置模擬器, iPhone GPS 修改, 免越獄定位, 寶可夢飛人, Pokemon GO 飛人, Pokemon GO GPS, 寶可夢定位修改, 寶可夢外掛, PokeGo 位置, KongGoo, 摃菇, GPS faker, location simulator, 아이폰 위치 변경, 포켓몬고 GPS">
@@ -13,9 +14,10 @@
     <meta property="og:type" content="website">
     <link rel="canonical" href="https://konggoo.uk/">
     <link rel="alternate" hreflang="zh-TW" href="https://konggoo.uk/">
-    <link rel="alternate" hreflang="ko" href="https://konggoo.uk/">
+    <link rel="alternate" hreflang="ko" href="https://konggoo.uk/ko/">
     <link rel="alternate" hreflang="x-default" href="https://konggoo.uk/">
     <meta property="og:url" content="https://konggoo.uk/">
+    <meta property="og:locale" content="zh_TW">
     <meta property="og:image" content="https://konggoo.uk/og-image.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
@@ -23,6 +25,7 @@
     <meta name="twitter:title" content="KongGoo 摃菇 — iOS 定位模擬器">
     <meta name="twitter:description" content="免越獄修改 iPhone GPS 定位，支援瞬移、路線規劃、地標搜尋。macOS / Windows 免費下載。">
     <meta name="twitter:image" content="https://konggoo.uk/og-image.png">
+    <!--/SEO:HEAD-->
     <meta name="theme-color" content="#4A7C59">
     <meta name="apple-mobile-web-app-title" content="KongGoo">
     <link rel="icon" type="image/png" href="/logo.png">
@@ -407,6 +410,7 @@
 
         /* ===== Mobile ===== */
         @media (max-width: 768px) {
+            .nav-inner { padding: 0 12px; }
             .nav-links, .nav-cta { display: none; }
             .nav-menu-btn { display: flex; }
             .hero { padding: calc(var(--nav-h) + 48px) 0 64px; }
@@ -439,6 +443,7 @@
         .mobile-menu a { display: block; padding: 12px 0; font-size: .95rem; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
         .mobile-menu a:last-child { border-bottom: none; }
     </style>
+    <!--SEO:JSONLD-->
     <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -490,6 +495,7 @@
   ]
 }
     </script>
+    <!--/SEO:JSONLD-->
 </head>
 <body>
 
@@ -507,10 +513,12 @@
             <a href="#pricing" data-i18n="nav_pricing">價格</a>
             <a href="#faq" data-i18n="nav_faq">FAQ</a>
         </div>
-        <div class="lang-switch" style="display:flex;gap:4px;margin-right:12px;">
-            <button class="lang-btn active" data-lang="zh-TW" onclick="setLang('zh-TW')" style="padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:700;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;">繁中</button>
-            <button class="lang-btn" data-lang="en" onclick="setLang('en')" style="padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;">EN</button>
-            <button class="lang-btn" data-lang="ko" onclick="setLang('ko')" style="padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;">한국</button>
+        <div class="lang-switch" style="display:flex;gap:4px;margin-right:4px;flex-wrap:nowrap;">
+            <a class="lang-btn active" href="/" hreflang="zh-TW" lang="zh-TW" data-lang="zh-TW" onclick="rememberLang('zh-TW')" style="padding:4px 4px;border-radius:6px;font-size:.62rem;font-weight:700;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;text-decoration:none;white-space:nowrap;">繁中</a>
+            <a class="lang-btn" href="/ja/" hreflang="ja" lang="ja" data-lang="ja" onclick="rememberLang('ja')" style="padding:4px 4px;border-radius:6px;font-size:.62rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;text-decoration:none;white-space:nowrap;">日本語</a>
+            <a class="lang-btn" href="/ko/" hreflang="ko" lang="ko" data-lang="ko" onclick="rememberLang('ko')" style="padding:4px 4px;border-radius:6px;font-size:.62rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;text-decoration:none;white-space:nowrap;">한국어</a>
+            <a class="lang-btn" href="/en/" hreflang="en" lang="en" data-lang="en" onclick="rememberLang('en')" style="padding:4px 4px;border-radius:6px;font-size:.62rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;text-decoration:none;white-space:nowrap;">EN</a>
+            <a class="lang-btn" href="/zh-CN/" hreflang="zh-CN" lang="zh-CN" data-lang="zh-CN" onclick="rememberLang('zh-CN')" style="padding:4px 4px;border-radius:6px;font-size:.62rem;font-weight:700;border:1px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer;text-decoration:none;white-space:nowrap;">简中</a>
         </div>
         <a href="#download" class="nav-cta">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v8.5M3.5 6L7 9.5 10.5 6M2 12h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -1010,11 +1018,12 @@ function showPaymentModal(planType) {
     const opts = document.getElementById('paymentOptions');
     const t = siteTranslations;
     const plan = planType === 'annual'
-        ? { name: t.pay_annual_name || '年費方案', price: t.price_annual_amount || 'NT$ 690', period: t.pay_annual_period || '1 年授權' }
-        : { name: t.pay_lifetime_name || '買斷方案', price: t.price_lifetime_amount || 'NT$ 1,750', period: t.pay_lifetime_period || '永久授權' };
+        ? { name: t.pay_annual_name || '年費方案', price: t.price_annual_amount || document.querySelector('[data-i18n=\"price_annual_amount\"]').textContent, period: t.pay_annual_period || '1 年授權' }
+        : { name: t.pay_lifetime_name || '買斷方案', price: t.price_lifetime_amount || document.querySelector('[data-i18n=\"price_lifetime_amount\"]').textContent, period: t.pay_lifetime_period || '永久授權' };
 
-    const krwRef = currentLang === 'ko'
-        ? `<div style="font-size:.85rem;color:var(--text-3);margin-top:2px;">≈ ${formatKrw(PRICES_TWD[planType])}</div>`
+    const refEl = document.getElementById(planType === 'annual' ? 'krw-annual' : 'krw-lifetime');
+    const krwRef = (currentLang === 'ja' || currentLang === 'ko') && refEl && refEl.textContent
+        ? `<div style="font-size:.85rem;color:var(--text-3);margin-top:2px;">${refEl.textContent}</div>`
         : '';
     opts.innerHTML = `
         <div style="padding:16px;background:var(--accent-bg);border-radius:var(--radius-sm);margin-bottom:16px;">
@@ -1473,105 +1482,49 @@ function hideDemoMessage() {
     }
 }
 
-/* ===== KRW Currency Conversion ===== */
-let krwRate = 43; // fallback: 1 TWD ≈ 43 KRW
-const PRICES_TWD = { annual: 690, lifetime: 1750 };
-
-async function fetchKrwRate() {
-    try {
-        const res = await fetch('https://open.er-api.com/v6/latest/TWD');
-        if (res.ok) {
-            const data = await res.json();
-            if (data.rates && data.rates.KRW) krwRate = data.rates.KRW;
-        }
-    } catch (e) { /* use fallback rate */ }
-}
-
-function formatKrw(twd) {
-    const krw = Math.round(twd * krwRate / 1000) * 1000;
-    return '₩' + krw.toLocaleString();
-}
-
-function updateKrwDisplay() {
-    const show = currentLang === 'ko';
-    const annualEl = document.getElementById('krw-annual');
-    const lifetimeEl = document.getElementById('krw-lifetime');
-    if (annualEl) {
-        annualEl.textContent = '≈ ' + formatKrw(PRICES_TWD.annual) + ' / 년';
-        annualEl.classList.toggle('show', show);
-    }
-    if (lifetimeEl) {
-        lifetimeEl.textContent = '≈ ' + formatKrw(PRICES_TWD.lifetime);
-        lifetimeEl.classList.toggle('show', show);
-    }
-}
-
-fetchKrwRate().then(updateKrwDisplay);
-
 /* ===== i18n Language System ===== */
-let currentLang = localStorage.getItem('siteLang') || 'zh-TW';
+let currentLang = document.documentElement.lang || 'zh-TW';
 let siteTranslations = {};
+
+function rememberLang(lang) {
+    try { localStorage.setItem('siteLang', lang); } catch (e) {}
+}
+
+function setLang(lang) {
+    rememberLang(lang);
+    const paths = { 'zh-TW': '/', ja: '/ja/', ko: '/ko/', en: '/en/', 'zh-CN': '/zh-CN/' };
+    const path = paths[lang];
+    if (path) location.href = path;
+}
 
 async function loadSiteLang(lang) {
     try {
         const res = await fetch(`/api/locale/${lang}`);
-        if (res.ok) {
-            siteTranslations = await res.json();
-            applySiteTranslations();
-            currentLang = lang;
-            localStorage.setItem('siteLang', lang);
-            updateSiteLangButtons();
-            // Update html lang attribute
-            document.documentElement.lang = lang === 'zh-TW' ? 'zh-TW' : lang === 'ko' ? 'ko' : 'en';
-        }
+        if (res.ok) siteTranslations = await res.json();
     } catch (e) {
         console.error('Failed to load language:', e);
     }
 }
 
-function applySiteTranslations() {
-    document.querySelectorAll('[data-i18n]').forEach(el => {
-        const key = el.getAttribute('data-i18n');
-        if (siteTranslations[key]) {
-            el.textContent = siteTranslations[key];
-        }
-    });
-    // Update page title and meta
-    if (siteTranslations.meta_title) document.title = siteTranslations.meta_title;
-    const metaDesc = document.querySelector('meta[name="description"]');
-    if (metaDesc && siteTranslations.meta_desc) metaDesc.content = siteTranslations.meta_desc;
-    // Update search placeholder
-    const searchInput = document.getElementById('demo-search');
-    if (searchInput && siteTranslations.showcase_search) searchInput.placeholder = siteTranslations.showcase_search;
-    // Update KRW display
-    updateKrwDisplay();
+function applySiteTranslations() { /* Page text and metadata are server-rendered. */ }
+
+function detectLanguage(language) {
+    const value = (language || '').toLowerCase();
+    if (value.startsWith('ja')) return 'ja';
+    if (value.startsWith('ko')) return 'ko';
+    if (/^(zh-cn|zh-hans|zh-sg)/.test(value)) return 'zh-CN';
+    if (/^zh-(tw|hk|hant)/.test(value) || value === 'zh') return 'zh-TW';
+    if (value.startsWith('en')) return 'en';
+    return 'zh-TW';
 }
 
-function updateSiteLangButtons() {
-    document.querySelectorAll('.lang-btn').forEach(btn => {
-        if (btn.getAttribute('data-lang') === currentLang) {
-            btn.style.background = 'var(--accent)';
-            btn.style.color = '#fff';
-        } else {
-            btn.style.background = 'transparent';
-            btn.style.color = 'var(--text-2)';
-        }
-    });
+if (location.pathname === '/' && !/(bot|crawl|spider|slurp|yeti|bingpreview|lighthouse|headless)/i.test(navigator.userAgent || '')) {
+    let savedLang = null;
+    try { savedLang = localStorage.getItem('siteLang'); } catch (e) {}
+    const targetLang = savedLang || detectLanguage(navigator.language || navigator.userLanguage);
+    if (targetLang !== 'zh-TW') location.replace(({ ja: '/ja/', ko: '/ko/', en: '/en/', 'zh-CN': '/zh-CN/' })[targetLang] + location.hash);
 }
 
-function setLang(lang) {
-    loadSiteLang(lang);
-}
-
-// Auto-detect language from browser
-if (!localStorage.getItem('siteLang')) {
-    const browserLang = navigator.language || navigator.userLanguage;
-    if (browserLang.startsWith('ko')) currentLang = 'ko';
-    else if (browserLang.startsWith('en')) currentLang = 'en';
-    else currentLang = 'zh-TW';
-}
-
-// Load language on page load
 loadSiteLang(currentLang);
 </script>
 </body>
