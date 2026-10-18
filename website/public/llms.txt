@@ -20,11 +20,11 @@ KongGoo runs on macOS (Intel and Apple Silicon) and Windows 10+. It simulates or
 - Japan reference prices: approximately ¥3,300/year and ¥8,300 lifetime. Korea reference prices: approximately ₩30,000/year and ₩76,000 lifetime.
 - One license key binds to one device.
 
-## Downloads (GitHub release v1.1.2)
+## Downloads (GitHub release v1.2.0)
 
-- macOS Apple Silicon: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg
-- macOS Intel: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-x64.dmg
-- Windows: https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-win-x64.exe
+- macOS Apple Silicon: https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg
+- macOS Intel: https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg
+- Windows: https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-win-x64.exe
 
 ## Language pages and resources
 

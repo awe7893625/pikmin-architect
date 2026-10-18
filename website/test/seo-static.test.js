@@ -69,9 +69,9 @@ test('llms.txt includes requested languages, downloads, and pricing', () => {
         assert.ok(llms.includes(url), `missing ${url}`);
     }
     for (const url of [
-        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg',
-        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-x64.dmg',
-        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-win-x64.exe'
+        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg',
+        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg',
+        'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-win-x64.exe'
     ]) assert.ok(llms.includes(url), `missing ${url}`);
     assert.ok(llms.includes('NT$690'));
     assert.ok(llms.includes('US$22'));

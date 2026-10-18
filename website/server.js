@@ -1164,9 +1164,9 @@ app.post('/api/license/verify', async (req, res) => {
             planType: license.planType || 'annual',
             expiresAt: license.expiresAt || null,
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg',
-                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-x64.dmg',
-                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-win-x64.exe'
+                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg',
+                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg',
+                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-win-x64.exe'
             }
         });
     } catch (error) {
@@ -2025,7 +2025,7 @@ app.get('/downloads/:file', (req, res) => {
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
         const rawUrl =
             process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg';
+            'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg';
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
@@ -2056,8 +2056,8 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-arm64.dmg?download=1',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.1.2/KongGoo-1.1.2-x64.dmg?download=1'
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg?download=1',
+                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg?download=1'
                 ];
                 
                 let fallbackIndex = 0;

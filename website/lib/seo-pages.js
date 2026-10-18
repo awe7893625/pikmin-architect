@@ -85,7 +85,7 @@ function createSeoRenderer({ publicDir, localesDir, siteUrl = 'https://konggoo.u
         const appData = {
             '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'KongGoo', alternateName: ALTERNATE_NAMES[code],
             description: locale.meta_desc, applicationCategory: 'UtilitiesApplication', operatingSystem: 'macOS, Windows',
-            softwareVersion: '1.1.2', datePublished: '2026-02-15', downloadUrl: `${self}#download`,
+            softwareVersion: '1.2.0', datePublished: '2026-02-15', downloadUrl: `${self}#download`,
             screenshot: `${baseUrl}/og-image.png`, image: `${baseUrl}/og-image.png`, url: self, inLanguage: code,
             featureList: ['feat_search_title', 'feat_tp_title', 'feat_route_title', 'feat_fav_title', 'feat_cross_title', 'feat_easy_title'].map((key) => locale[key]),
             author: { '@type': 'Organization', name: 'KongGoo' },
