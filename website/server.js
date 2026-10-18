@@ -13,6 +13,7 @@ const {
     maskEmail
 } = require('./lib/license-policy');
 const { sendLicenseEmail } = require('./lib/mailer');
+const { verifyWebhookSignature } = require('./lib/polar-webhook');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -1581,7 +1582,7 @@ app.post('/api/payment/create', async (req, res) => {
             // origin only — strip any accidental path (Codex review fix: prevent
             // SUCCESS_URL=https://konggoo.uk/payment/success doubling the path).
             const baseUrl = new URL(process.env.SUCCESS_URL || 'https://konggoo.uk').origin;
-            const polarRes = await fetch('https://api.polar.sh/v1/checkouts/', {
+            const polarRes = await fetch(`${(process.env.POLAR_API_BASE || 'https://api.polar.sh').replace(/\/$/, '')}/v1/checkouts/`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${POLAR_ACCESS_TOKEN}`,
@@ -1724,60 +1725,102 @@ app.post('/api/payment/ecpay-notify', async (req, res) => {
 // 現在一律回頭跟 Polar 核對該 checkout 的真實狀態，核不過就不發。
 const POLAR_PAID_STATUSES = new Set(['succeeded', 'confirmed']);
 
+const polarConfirmInFlight = new Map();
+async function confirmPolarOrder(orderId) {
+    if (polarConfirmInFlight.has(orderId)) return polarConfirmInFlight.get(orderId);
+    const promise = (async () => {
+        try {
+            const order = await getOrderFromKV(orderId);
+            if (!order) return { httpStatus: 404, body: { error: 'Order not found' } };
+            if (order.status === 'paid' && order.licenseKey) {
+                const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
+                return { httpStatus: 200, body: { success: true, licenseKey, planType: order.planType } };
+            }
+            if (order.gateway !== 'polar' || !order.polarCheckoutId) {
+                return { httpStatus: 400, body: { error: 'Not a Polar order', code: 'GATEWAY_MISMATCH' } };
+            }
+            if (!POLAR_ACCESS_TOKEN) {
+                console.error('❌ [Polar confirm] 缺 POLAR_ACCESS_TOKEN，無法驗證付款');
+                return { httpStatus: 503, body: { error: 'Payment verification unavailable', code: 'POLAR_UNCONFIGURED' } };
+            }
+            let checkout;
+            try {
+                const base = (process.env.POLAR_API_BASE || 'https://api.polar.sh').replace(/\/$/, '');
+                const r = await fetch(`${base}/v1/checkouts/${encodeURIComponent(order.polarCheckoutId)}`, {
+                    headers: { 'Authorization': `Bearer ${POLAR_ACCESS_TOKEN}` }
+                });
+                checkout = await r.json();
+                if (!r.ok) {
+                    console.warn('⚠️ [Polar confirm] 查詢 checkout 失敗:', r.status, JSON.stringify(checkout));
+                    return { httpStatus: 502, body: { error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' } };
+                }
+            } catch (e) {
+                console.error('❌ [Polar confirm] Polar API 錯誤:', e.message);
+                return { httpStatus: 502, body: { error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' } };
+            }
+            const metaOrderId = checkout && checkout.metadata && checkout.metadata.orderId;
+            if (metaOrderId && metaOrderId !== orderId) {
+                console.warn('⚠️ [Polar confirm] checkout metadata 對不上訂單:', metaOrderId, '!=', orderId);
+                return { httpStatus: 400, body: { error: 'Order mismatch', code: 'ORDER_MISMATCH' } };
+            }
+            if (!POLAR_PAID_STATUSES.has(String(checkout && checkout.status))) {
+                return { httpStatus: 200, body: { success: false, code: 'NOT_PAID', status: checkout && checkout.status } };
+            }
+            const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
+            return { httpStatus: 200, body: { success: true, licenseKey, planType: order.planType } };
+        } catch (error) {
+            console.error('❌ Polar confirm 錯誤:', error);
+            return { httpStatus: 500, body: { error: 'Internal error' } };
+        }
+    })();
+    polarConfirmInFlight.set(orderId, promise);
+    try { return await promise; }
+    finally { if (polarConfirmInFlight.get(orderId) === promise) polarConfirmInFlight.delete(orderId); }
+}
+
 app.get('/api/payment/polar-confirm', async (req, res) => {
     const { orderId } = req.query;
     if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+    const result = await confirmPolarOrder(orderId);
+    return res.status(result.httpStatus).json(result.body);
+});
 
-    try {
-        const order = await getOrderFromKV(orderId);
-        if (!order) return res.status(404).json({ error: 'Order not found' });
-
-        // 已經是 paid 的訂單：付款早就驗過了，這裡只補做「發信」等後續（冪等）
-        if (order.status === 'paid' && order.licenseKey) {
-            const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
-            return res.json({ success: true, licenseKey, planType: order.planType });
-        }
-
-        if (order.gateway !== 'polar' || !order.polarCheckoutId) {
-            return res.status(400).json({ error: 'Not a Polar order', code: 'GATEWAY_MISMATCH' });
-        }
-        if (!POLAR_ACCESS_TOKEN) {
-            console.error('❌ [Polar confirm] 缺 POLAR_ACCESS_TOKEN，無法驗證付款');
-            return res.status(503).json({ error: 'Payment verification unavailable', code: 'POLAR_UNCONFIGURED' });
-        }
-
-        let checkout;
-        try {
-            const r = await fetch(`https://api.polar.sh/v1/checkouts/${encodeURIComponent(order.polarCheckoutId)}`, {
-                headers: { 'Authorization': `Bearer ${POLAR_ACCESS_TOKEN}` }
-            });
-            checkout = await r.json();
-            if (!r.ok) {
-                console.warn('⚠️ [Polar confirm] 查詢 checkout 失敗:', r.status, JSON.stringify(checkout));
-                return res.status(502).json({ error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' });
-            }
-        } catch (e) {
-            console.error('❌ [Polar confirm] Polar API 錯誤:', e.message);
-            return res.status(502).json({ error: 'Payment verification failed', code: 'POLAR_LOOKUP_FAILED' });
-        }
-
-        // 綁定檢查：這個 checkout 必須真的屬於這筆訂單
-        const metaOrderId = checkout && checkout.metadata && checkout.metadata.orderId;
-        if (metaOrderId && metaOrderId !== orderId) {
-            console.warn('⚠️ [Polar confirm] checkout metadata 對不上訂單:', metaOrderId, '!=', orderId);
-            return res.status(400).json({ error: 'Order mismatch', code: 'ORDER_MISMATCH' });
-        }
-
-        if (!POLAR_PAID_STATUSES.has(String(checkout && checkout.status))) {
-            return res.json({ success: false, code: 'NOT_PAID', status: checkout && checkout.status });
-        }
-
-        const licenseKey = await orderFlow.finalizePaidOrder(orderId, order, { gateway: 'polar' });
-        return res.json({ success: true, licenseKey, planType: order.planType });
-    } catch (error) {
-        console.error('❌ Polar confirm 錯誤:', error);
-        return res.status(500).json({ error: 'Internal error' });
+app.post('/api/payment/polar-webhook', async (req, res) => {
+    if (!req.rawBody) return res.status(400).json({ error: 'Missing raw body' });
+    const secret = process.env.POLAR_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: 'Webhook verification unavailable' });
+    const verification = verifyWebhookSignature({ secret, headers: req.headers, rawBody: req.rawBody });
+    if (!verification.ok) {
+        if (verification.reason === 'STALE' || verification.reason === 'BAD_TIMESTAMP') return res.status(400).json({ error: 'Invalid webhook timestamp' });
+        return res.status(401).json({ error: 'Invalid webhook signature' });
     }
+    let event;
+    try { event = JSON.parse(req.rawBody.toString('utf8')); }
+    catch (_) { return res.status(400).json({ error: 'Invalid JSON' }); }
+    const type = event && event.type;
+    const data = event && event.data;
+    if (type !== 'order.paid' && type !== 'checkout.updated') return res.json({ received: true, ignored: true });
+    if (!data || (type === 'checkout.updated' && !POLAR_PAID_STATUSES.has(String(data.status)))) return res.json({ received: true, ignored: true });
+    const orderId = data.metadata && data.metadata.orderId;
+    const checkoutId = type === 'order.paid' ? data.checkout_id : data.id;
+    if (!orderId) return res.json({ received: true, ignored: true });
+    let order;
+    try { order = await getOrderFromKV(orderId); }
+    catch (error) { console.error('❌ Polar webhook KV 錯誤:', error.message); return res.status(500).json({ error: 'Internal error' }); }
+    if (!order) return res.json({ received: true, ignored: true });
+    if (order.polarCheckoutId && checkoutId && order.polarCheckoutId !== checkoutId) {
+        console.warn('⚠️ [Polar webhook] checkout id 對不上訂單:', orderId, type);
+        return res.json({ received: true, ignored: true });
+    }
+    console.log('[Polar webhook] received:', orderId, type);
+    const result = await confirmPolarOrder(orderId);
+    if (result.httpStatus === 200 && result.body.success === true) return res.json({ received: true, finalized: true });
+    if (result.httpStatus >= 500) return res.status(result.httpStatus).json(result.body);
+    if (result.body.code === 'NOT_PAID' || result.body.code === 'ORDER_MISMATCH' || result.body.code === 'GATEWAY_MISMATCH') {
+        return res.json({ received: true, ignored: true, code: result.body.code });
+    }
+    if (result.httpStatus === 404) return res.json({ received: true, ignored: true });
+    return res.status(result.httpStatus).json(result.body);
 });
 
 // 5.2. 獲取訂單信息
