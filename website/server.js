@@ -14,11 +14,45 @@ const {
 } = require('./lib/license-policy');
 const { sendLicenseEmail } = require('./lib/mailer');
 const { verifyWebhookSignature } = require('./lib/polar-webhook');
+const APP_VERSION = '1.2.0';
+const RELEASE_BASE = 'https://github.com/awe7893625/pikmin-architect/releases/' + 'download/' + 'v' + APP_VERSION;
+const APP_RELEASE = {
+    version: APP_VERSION,
+    releasedAt: '2026-10-18T07:54:41Z',
+    notes: {
+        'zh-TW': '最多可同時控制 4 支 iPhone，支援 Wi-Fi 無線控制，介面新增日文、韓文與英文。',
+        ja: '最大4台のiPhoneを同時に操作でき、Wi-Fiによるワイヤレス操作に対応。日本語、韓国語、英語のUIを追加しました。',
+        ko: '최대 4대의 iPhone을 동시에 제어하고 Wi-Fi 무선 제어를 지원합니다. 일본어, 한국어, 영어 UI를 추가했습니다.',
+        en: 'Control up to four iPhones at once with wireless Wi-Fi control. The UI now supports Japanese, Korean, and English.'
+    },
+    downloads: {
+        macArm64: `${RELEASE_BASE}/KongGoo-${APP_VERSION}-arm64.dmg`,
+        macX64: `${RELEASE_BASE}/KongGoo-${APP_VERSION}-x64.dmg`,
+        winX64: `${RELEASE_BASE}/KongGoo-${APP_VERSION}-win-x64.exe`
+    }
+};
+function formatTaipeiTradeDate(date) {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+    return `${values.year}/${values.month}/${values.day} ${values.hour === '24' ? '00' : values.hour}:${values.minute}:${values.second}`;
+}
 const app = express();
+app.formatTaipeiTradeDate = formatTaipeiTradeDate;
 const PORT = process.env.PORT || 3001;
 
 // 中間件
 app.use(cors());
+app.use((req, res, next) => {
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host = String((forwardedHost ? forwardedHost.split(',')[0] : req.headers.host) || '')
+        .trim().toLowerCase().replace(/:\d+$/, '');
+    if (host !== 'www.konggoo.uk') return next();
+    const status = req.method === 'GET' || req.method === 'HEAD' ? 301 : 308;
+    return res.redirect(status, `https://konggoo.uk${req.originalUrl}`);
+});
 // 需要保留 raw body 以驗證 ECPay 回傳
 app.use(
     express.json({
@@ -746,6 +780,9 @@ app.post('/payment/success', async (req, res) => {
 // 語言 API
 app.get('/api/locale/:lang', (req, res) => {
     const lang = req.params.lang;
+    if (!['zh-TW', 'ja', 'ko', 'en', 'zh-CN'].includes(lang)) {
+        return res.status(404).json({ error: 'Not Found', code: 'LOCALE_NOT_FOUND' });
+    }
     res.sendFile(path.join(__dirname, 'locales', `${lang}.json`));
 });
 
@@ -1164,9 +1201,9 @@ app.post('/api/license/verify', async (req, res) => {
             planType: license.planType || 'annual',
             expiresAt: license.expiresAt || null,
             download: {
-                mac: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg',
-                macIntel: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg',
-                windows: 'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-win-x64.exe'
+                mac: APP_RELEASE.downloads.macArm64,
+                macIntel: APP_RELEASE.downloads.macX64,
+                windows: APP_RELEASE.downloads.winX64
             }
         });
     } catch (error) {
@@ -1649,8 +1686,7 @@ app.get('/payment/ecpay-checkout', async (req, res) => {
     const baseUrl = new URL(process.env.SUCCESS_URL || 'https://konggoo.uk').origin;
     const planNames = { annual: 'KongGoo 年費方案', lifetime: 'KongGoo 買斷方案' };
     const now = new Date();
-    const pad = n => String(n).padStart(2, '0');
-    const merchantTradeDate = `${now.getFullYear()}/${pad(now.getMonth()+1)}/${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const merchantTradeDate = formatTaipeiTradeDate(now);
 
     const params = {
         MerchantID: ECPAY_MERCHANT_ID,
@@ -2023,9 +2059,7 @@ app.get('/downloads/:file', (req, res) => {
         // 格式：https://github.com/OWNER/REPO/releases/download/TAG/FILENAME
         // 重要：GitHub Release 資產通常會先回 302 轉到 release-assets.githubusercontent.com
         // 我們必須處理 302（或直接用 ?download=1 觸發轉址），否則會誤判為失敗導致使用者下載到幾百 bytes 的錯誤 JSON。
-        const rawUrl =
-            process.env.MAC_DMG_URL ||
-            'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg';
+        const rawUrl = APP_RELEASE.downloads.macArm64;
         const downloadUrl = rawUrl.includes('?') ? rawUrl : `${rawUrl}?download=1`;
         console.log(`📥 [下載] 代理下載 DMG 從: ${downloadUrl}`);
         
@@ -2056,8 +2090,8 @@ app.get('/downloads/:file', (req, res) => {
                 console.log(`⚠️ [下載] GitHub 回傳 ${proxyRes.statusCode}，嘗試備用連結`);
                 // 如果 GitHub 回傳 404，嘗試使用多個備用連結
                 const fallbackUrls = [
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-arm64.dmg?download=1',
-                    'https://github.com/awe7893625/pikmin-architect/releases/download/v1.2.0/KongGoo-1.2.0-x64.dmg?download=1'
+                    `${APP_RELEASE.downloads.macArm64}?download=1`,
+                    `${APP_RELEASE.downloads.macX64}?download=1`
                 ];
                 
                 let fallbackIndex = 0;
@@ -2851,6 +2885,11 @@ app.get('/api/version', (req, res) => {
     });
 });
 
+app.get('/api/app/latest', (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json(APP_RELEASE);
+});
+
 // 靜態文件服務（放在最後，作為 fallback）
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/locales', express.static(path.join(__dirname, 'locales')));
@@ -2858,16 +2897,18 @@ app.use('/downloads', express.static(path.join(__dirname, 'public', 'downloads')
 
 // 404 處理（放在最後）
 app.use((req, res) => {
-    console.log('❌ 404 - 未找到路由:', req.method, req.path);
-    console.log('📂 __dirname:', __dirname);
-    console.log('📂 publicDir:', publicDir);
-    console.log('📂 paymentProcessDir:', paymentProcessDir);
-    res.status(404).json({ 
-        error: 'Not Found', 
-        path: req.path,
-        method: req.method,
-        __dirname: __dirname
-    });
+    console.log('❌ 404:', req.method, req.path);
+    res.status(404).json({ error: 'Not Found', path: req.path, method: req.method });
+});
+
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    if (err.type === 'entity.parse.failed' || (err instanceof SyntaxError && err.status === 400 && 'body' in err)) {
+        console.warn('⚠️ [BAD_JSON]', req.method, req.path);
+        return res.status(400).json({ error: 'Invalid JSON body', code: 'BAD_JSON' });
+    }
+    console.error('❌ [REQUEST_ERROR]', req.method, req.path, err.message);
+    return res.status(500).json({ error: 'Internal Server Error' });
 });
 
 // 僅在本地運行時啟動服務器
